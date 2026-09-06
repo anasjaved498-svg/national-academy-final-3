@@ -337,7 +337,7 @@ export default function Reviews() {
             </button>
 
             <p className="mt-3 text-xs text-[var(--ink-faint)]">
-              ✅ Reviews appear after admin approval. JazakAllah for your feedback!
+              
             </p>
           </form>
         )}
