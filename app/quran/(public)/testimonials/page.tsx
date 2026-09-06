@@ -2,72 +2,117 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "@/lib/store";
-import { Star, ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
+
+type Review = {
+  id: string;
+  name: string;
+  role?: string | null;
+  review: string;
+  rating: number;
+  approved: boolean;
+};
 
 function initials(name: string) {
   return name
     .trim()
     .split(/\s+/)
-    .map((p) => p[0])
-    .filter(Boolean)
-    .slice(0, 2)
+    .map((part) => part[0] || "")
     .join("")
-    .toUpperCase();
+    .toUpperCase()
+    .slice(0, 2);
+}
+
+const AVATAR_COLORS = [
+  "#0d9488",
+  "#7c3aed",
+  "#db2777",
+  "#ea580c",
+  "#059669",
+  "#0284c7",
+  "#d97706",
+  "#be185d",
+];
+
+function avatarColor(name: string) {
+  let hash = 0;
+  for (let i = 0; i < name.length; i += 1) {
+    hash = (hash * 31 + name.charCodeAt(i)) % AVATAR_COLORS.length;
+  }
+  return AVATAR_COLORS[Math.abs(hash)];
 }
 
 export default function Reviews() {
   const { quranReviews, addQuranReview } = useStore();
-  const approved = useMemo(() => quranReviews.filter((r) => r.approved), [quranReviews]);
+
+  const approved = useMemo(
+    () => (quranReviews as Review[]).filter((review) => review.approved),
+    [quranReviews],
+  );
 
   const [name, setName] = useState("");
   const [role, setRole] = useState("");
   const [review, setReview] = useState("");
   const [rating, setRating] = useState(5);
   const [sent, setSent] = useState(false);
-  const scrollerRef = useRef<HTMLDivElement | null>(null);
-  const autoTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const scrollByPage = (direction: 1 | -1) => {
-    const el = scrollerRef.current;
-    if (!el) return;
-
-    const nextLeft = el.scrollLeft + direction * el.clientWidth;
-    const maxLeft = el.scrollWidth - el.clientWidth;
-
-    if (direction > 0 && nextLeft >= maxLeft - 8) {
-      el.scrollTo({ left: 0, behavior: "smooth" });
-      return;
-    }
-    if (direction < 0 && el.scrollLeft <= 8) {
-      el.scrollTo({ left: maxLeft, behavior: "smooth" });
-      return;
-    }
-    el.scrollTo({ left: Math.max(0, Math.min(nextLeft, maxLeft)), behavior: "smooth" });
-  };
+  const [cardsVisible, setCardsVisible] = useState(3);
+  const [position, setPosition] = useState(0);
+  const [isPaused, setIsPaused] = useState(false);
+  const trackRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    const el = scrollerRef.current;
-    if (!el || approved.length <= 1) return;
-
-    autoTimerRef.current = setInterval(() => scrollByPage(1), 5000);
-
-    return () => {
-      if (autoTimerRef.current) clearInterval(autoTimerRef.current);
+    const updateVisible = () => {
+      if (window.innerWidth <= 600) setCardsVisible(1);
+      else if (window.innerWidth <= 960) setCardsVisible(2);
+      else setCardsVisible(3);
     };
-  }, [approved.length]);
 
-  const pauseAuto = () => {
-    if (autoTimerRef.current) clearInterval(autoTimerRef.current);
+    updateVisible();
+    window.addEventListener("resize", updateVisible);
+    return () => window.removeEventListener("resize", updateVisible);
+  }, []);
+
+  const maxPosition = Math.max(0, approved.length - cardsVisible);
+
+  useEffect(() => {
+    setPosition((current) => Math.min(current, maxPosition));
+  }, [cardsVisible, maxPosition]);
+
+  useEffect(() => {
+    if (approved.length <= cardsVisible || isPaused) return;
+
+    const timer = window.setInterval(() => {
+      setPosition((current) => (current >= maxPosition ? 0 : current + 1));
+    }, 5000);
+
+    return () => window.clearInterval(timer);
+  }, [approved.length, cardsVisible, isPaused, maxPosition]);
+
+  useEffect(() => {
+    const track = trackRef.current;
+    if (!track) return;
+
+    const gap = 20;
+    const cardWidth =
+      cardsVisible === 1
+        ? track.clientWidth
+        : (track.clientWidth - gap * (cardsVisible - 1)) / cardsVisible;
+
+    track.style.transform = `translateX(-${position * (cardWidth + gap)}px)`;
+  }, [cardsVisible, position, approved.length]);
+
+  const next = () => {
+    setPosition((current) => (current >= maxPosition ? 0 : current + 1));
   };
 
-  const resumeAuto = () => {
-    if (approved.length <= 1) return;
-    if (autoTimerRef.current) clearInterval(autoTimerRef.current);
-    autoTimerRef.current = setInterval(() => scrollByPage(1), 5000);
+  const previous = () => {
+    setPosition((current) => (current <= 0 ? maxPosition : current - 1));
   };
 
-  const submit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const submit = (event: React.FormEvent) => {
+    event.preventDefault();
+
     if (!name.trim() || !review.trim()) return;
 
     addQuranReview({
@@ -77,94 +122,128 @@ export default function Reviews() {
       rating,
     });
 
-    setSent(true);
     setName("");
     setRole("");
     setReview("");
     setRating(5);
+    setSent(true);
   };
 
+  const dotCount = maxPosition + 1;
+
   return (
-    <div className="max-w-[1180px] mx-auto px-4 sm:px-8 py-12 sm:py-20">
+    <div className="max-w-6xl mx-auto px-4 sm:px-8 py-12 sm:py-20">
       <div className="text-center">
-        <p className="text-xs font-semibold tracking-wide uppercase text-[var(--link)]">Quran Academy Feedback</p>
-        <h1 className="font-display text-4xl mt-2 text-[var(--heading)]">What Quran Families Say</h1>
+        <div className="section-label text-xs font-semibold tracking-[0.28em] uppercase text-[var(--link)]">
+          Quran Academy Feedback
+        </div>
+        <h1 className="font-display text-[clamp(2rem,5vw,2.75rem)] mt-2 text-[var(--heading)]">
+          What Our Quran Students &amp; Parents Say
+        </h1>
         <p className="mt-3 text-[var(--ink-soft)] max-w-2xl mx-auto">
-          Real feedback from parents and students about their Quran learning experience.
+          Real feedback from Quran students and parents about their learning experience.
         </p>
       </div>
 
       <section className="mt-12" aria-label="Quran Academy reviews">
         <div
-          ref={scrollerRef}
-          onMouseEnter={pauseAuto}
-          onMouseLeave={resumeAuto}
-          onTouchStart={pauseAuto}
-          onTouchEnd={resumeAuto}
-          className="flex gap-5 overflow-x-auto snap-x snap-mandatory pb-2"
-          style={{ scrollbarWidth: "none" }}
+          className="overflow-hidden"
+          onMouseEnter={() => setIsPaused(true)}
+          onMouseLeave={() => setIsPaused(false)}
+          onTouchStart={() => setIsPaused(true)}
+          onTouchEnd={() => setIsPaused(false)}
         >
           {approved.length === 0 ? (
-            <div className="w-full rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-8 text-center text-sm text-[var(--ink-faint)]">
+            <div className="rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-10 text-center text-sm text-[var(--ink-faint)]">
               No Quran reviews yet. Be the first to share your experience below.
             </div>
           ) : (
-            approved.map((t) => (
-              <article
-                key={t.id}
-                className="group relative shrink-0 w-[88%] sm:w-[48%] lg:w-[32%] min-h-[235px] snap-start overflow-hidden rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-6 flex flex-col hover:border-[var(--line-bright)] hover:-translate-y-0.5 transition-all"
-              >
-                <div
-                  className="absolute top-0 left-0 right-0 h-[2px]"
-                  style={{
-                    background:
-                      "linear-gradient(90deg, var(--blue-rich), var(--blue-mid), var(--blue-bright))",
-                  }}
-                />
-                <div className="flex gap-0.5 mb-3">
-                  {Array.from({ length: 5 }).map((_, i) => (
-                    <Star
-                      key={i}
-                      size={14}
-                      className={i < t.rating ? "text-[var(--link)]" : "text-[var(--line)]"}
-                      fill={i < t.rating ? "currentColor" : "none"}
-                      strokeWidth={i < t.rating ? 0 : 1.5}
-                    />
-                  ))}
-                </div>
-                <p className="text-sm text-[var(--ink-soft)] leading-relaxed italic min-h-[118px]">
-                  &ldquo;{t.review}&rdquo;
-                </p>
-                <div className="mt-5 flex items-center gap-3 mt-auto">
-                  <div className="w-10 h-10 rounded-full bg-[var(--primary)] text-white flex items-center justify-center text-sm font-bold shrink-0">
-                    {initials(t.name) || "?"}
+            <div
+              ref={trackRef}
+              className="flex gap-5 transition-transform duration-500 ease-out will-change-transform"
+            >
+              {approved.map((item) => (
+                <article
+                  key={item.id}
+                  className="group relative shrink-0 w-full md:w-[calc(50%-10px)] lg:w-[calc(33.333333%-13.333px)] min-h-[235px] rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-6 flex flex-col overflow-hidden transition-all duration-300 hover:border-[var(--line-bright)] hover:-translate-y-1"
+                  style={{ width: cardsVisible === 1 ? "100%" : cardsVisible === 2 ? "calc(50% - 10px)" : "calc(33.333333% - 13.333px)" }}
+                >
+                  <div
+                    className="absolute top-0 left-0 right-0 h-[2px]"
+                    style={{
+                      background:
+                        "linear-gradient(90deg,var(--teal-dark),var(--teal-light),var(--amber))",
+                    }}
+                  />
+
+                  <div className="flex gap-1 mb-3 text-[15px]" aria-label={`${item.rating} out of 5 stars`}>
+                    {Array.from({ length: 5 }).map((_, index) => (
+                      <span key={index} aria-hidden="true">
+                        {index < item.rating ? "⭐" : "☆"}
+                      </span>
+                    ))}
                   </div>
-                  <div className="min-w-0">
-                    <p className="text-sm font-bold text-[var(--ink)] truncate">{t.name}</p>
-                    {t.role && <p className="text-xs text-[var(--ink-faint)] truncate">{t.role}</p>}
+
+                  <p className="text-sm text-[var(--ink-soft)] leading-[1.7] italic mb-[18px]">
+                    {item.review}
+                  </p>
+
+                  <div className="mt-auto flex items-center gap-3">
+                    <div
+                      className="w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm text-white shrink-0"
+                      style={{ background: avatarColor(item.name) }}
+                    >
+                      {initials(item.name) || "?"}
+                    </div>
+                    <div className="min-w-0">
+                      <span className="font-bold text-sm block text-[var(--ink)] truncate">
+                        {item.name}
+                      </span>
+                      {item.role && (
+                        <span className="text-[11px] text-[var(--ink-faint)] block truncate">
+                          {item.role}
+                        </span>
+                      )}
+                    </div>
                   </div>
-                </div>
-              </article>
-            ))
+                </article>
+              ))}
+            </div>
           )}
         </div>
 
         {approved.length > 1 && (
-          <div className="mt-5 flex items-center justify-center gap-3">
+          <div className="flex items-center justify-center gap-3 mt-6">
             <button
               type="button"
-              onClick={() => scrollByPage(-1)}
-              aria-label="Previous Quran reviews"
-              className="w-10 h-10 rounded-full border border-[var(--line)] bg-[var(--surface)] text-[var(--ink)] flex items-center justify-center hover:border-[var(--primary)] transition-colors"
+              onClick={previous}
+              aria-label="Previous Quran review"
+              className="w-10 h-10 rounded-full bg-[rgba(0,108,181,0.10)] border border-[var(--line-bright)] text-[var(--link)] flex items-center justify-center text-lg transition-all hover:bg-[rgba(0,108,181,0.22)] hover:scale-105"
             >
               <ChevronLeft size={18} />
             </button>
-            <span className="text-xs text-[var(--ink-faint)]">Reviews auto-rotate</span>
+
+            <div className="flex items-center gap-1.5" aria-label="Review pages">
+              {Array.from({ length: Math.min(dotCount, 10) }).map((_, index) => (
+                <button
+                  key={index}
+                  type="button"
+                  onClick={() => setPosition(index)}
+                  aria-label={`Go to review position ${index + 1}`}
+                  className={
+                    index === position
+                      ? "w-[18px] h-1.5 rounded-[3px] bg-[var(--link)] transition-all"
+                      : "w-1.5 h-1.5 rounded-full bg-[rgba(0,108,181,0.25)] transition-all"
+                  }
+                />
+              ))}
+            </div>
+
             <button
               type="button"
-              onClick={() => scrollByPage(1)}
-              aria-label="Next Quran reviews"
-              className="w-10 h-10 rounded-full border border-[var(--line)] bg-[var(--surface)] text-[var(--ink)] flex items-center justify-center hover:border-[var(--primary)] transition-colors"
+              onClick={next}
+              aria-label="Next Quran review"
+              className="w-10 h-10 rounded-full bg-[rgba(0,108,181,0.10)] border border-[var(--line-bright)] text-[var(--link)] flex items-center justify-center text-lg transition-all hover:bg-[rgba(0,108,181,0.22)] hover:scale-105"
             >
               <ChevronRight size={18} />
             </button>
@@ -172,67 +251,94 @@ export default function Reviews() {
         )}
       </section>
 
-      <section className="mt-16 max-w-2xl mx-auto rounded-2xl border border-[var(--line)] bg-[var(--surface-2)] p-6 sm:p-8">
-        <h2 className="font-display text-xl text-[var(--heading)]">✍️ Share Your Quran Experience</h2>
-        <p className="text-sm text-[var(--ink-faint)] mt-1">
+      <section className="mt-12 rounded-[20px] border border-[var(--line)] bg-[var(--surface-2)] p-6 sm:p-8 relative overflow-hidden">
+        <div
+          className="absolute top-0 left-0 right-0 h-[3px]"
+          style={{
+            background:
+              "linear-gradient(90deg,var(--teal-dark),var(--teal-light),var(--amber))",
+          }}
+        />
+
+        <h2 className="font-display text-xl text-[var(--heading)]">
+          ✍️ Share Your Quran Experience
+        </h2>
+        <p className="text-sm text-[var(--ink-faint)] mt-1 mb-6">
           Parents and students are welcome to share honest feedback about their Quran learning journey.
         </p>
 
+        <div className="flex gap-2 mb-6" aria-label="Choose a rating">
+          {[1, 2, 3, 4, 5].map((number) => (
+            <button
+              type="button"
+              key={number}
+              onClick={() => setRating(number)}
+              aria-label={`${number} star${number === 1 ? "" : "s"}`}
+              className="text-2xl transition-transform hover:scale-110"
+            >
+              {number <= rating ? "⭐" : "☆"}
+            </button>
+          ))}
+        </div>
+
         {sent ? (
-          <div className="mt-5 rounded-xl border border-[var(--line)] bg-[var(--surface)] px-4 py-4 text-sm text-[var(--link)]">
-            🎉 JazakAllah! Thank you for sharing your experience.
+          <div className="rounded-xl border border-[var(--line)] bg-[var(--surface)] px-4 py-4 text-sm text-[var(--link)]">
+            🎉 Thank you! Your Quran review has been submitted.
           </div>
         ) : (
-          <form onSubmit={submit} className="mt-5 space-y-4">
-            <div className="flex gap-1" aria-label="Choose a rating">
-              {[1, 2, 3, 4, 5].map((n) => (
-                <button
-                  type="button"
-                  key={n}
-                  onClick={() => setRating(n)}
-                  aria-label={`${n} star${n === 1 ? "" : "s"}`}
-                  className="p-0.5"
-                >
-                  <Star
-                    size={22}
-                    className={n <= rating ? "text-[var(--link)]" : "text-[var(--line)]"}
-                    fill={n <= rating ? "currentColor" : "none"}
-                  />
-                </button>
-              ))}
+          <form onSubmit={submit}>
+            <div className="grid sm:grid-cols-2 gap-3 mb-3">
+              <div>
+                <label className="text-[11px] tracking-[1.5px] uppercase text-[var(--ink-faint)] font-semibold">
+                  Your Name *
+                </label>
+                <input
+                  required
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
+                  placeholder="e.g. Fatima A."
+                  className="mt-1.5 w-full rounded-[9px] border border-[var(--line)] bg-white/80 px-3.5 py-2.5 text-sm text-[var(--ink)] outline-none focus:border-[var(--link)]"
+                />
+              </div>
+
+              <div>
+                <label className="text-[11px] tracking-[1.5px] uppercase text-[var(--ink-faint)] font-semibold">
+                  Your Role
+                </label>
+                <input
+                  value={role}
+                  onChange={(event) => setRole(event.target.value)}
+                  placeholder="e.g. Parent · Nazra student"
+                  className="mt-1.5 w-full rounded-[9px] border border-[var(--line)] bg-white/80 px-3.5 py-2.5 text-sm text-[var(--ink)] outline-none focus:border-[var(--link)]"
+                />
+              </div>
             </div>
 
-            <div className="grid sm:grid-cols-2 gap-3">
-              <input
+            <div className="mb-4">
+              <label className="text-[11px] tracking-[1.5px] uppercase text-[var(--ink-faint)] font-semibold">
+                Your Review *
+              </label>
+              <textarea
                 required
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Your Name *"
-                className="rounded-xl border border-[var(--line)] bg-[var(--bg)] px-4 py-2.5 text-sm outline-none focus:border-[var(--primary)]"
-              />
-              <input
-                value={role}
-                onChange={(e) => setRole(e.target.value)}
-                placeholder="e.g. Parent · Nazra student"
-                className="rounded-xl border border-[var(--line)] bg-[var(--bg)] px-4 py-2.5 text-sm outline-none focus:border-[var(--primary)]"
+                rows={5}
+                value={review}
+                onChange={(event) => setReview(event.target.value)}
+                placeholder="Share your Quran learning experience..."
+                className="mt-1.5 w-full rounded-[9px] border border-[var(--line)] bg-white/80 px-3.5 py-2.5 text-sm text-[var(--ink)] outline-none resize-y min-h-[110px] focus:border-[var(--link)]"
               />
             </div>
-
-            <textarea
-              required
-              rows={4}
-              value={review}
-              onChange={(e) => setReview(e.target.value)}
-              placeholder="Share your Quran learning experience..."
-              className="w-full rounded-xl border border-[var(--line)] bg-[var(--bg)] px-4 py-2.5 text-sm outline-none focus:border-[var(--primary)]"
-            />
 
             <button
               type="submit"
-              className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full bg-[var(--primary)] text-white text-sm font-medium hover:bg-[var(--primary-dark)]"
+              className="inline-flex items-center gap-2 bg-[var(--primary)] hover:bg-[var(--primary-dark)] text-white border-0 px-7 py-3 rounded-[10px] font-bold text-sm transition-all"
             >
-              ✨ Submit Review
+              <span>✨</span>
+              <span>Submit Review</span>
             </button>
+
+            <p className="mt-3 text-xs text-[var(--ink-faint)]">
+              ✅ Reviews appear after admin approval. JazakAllah for your feedback!
+            </p>
           </form>
         )}
       </section>
