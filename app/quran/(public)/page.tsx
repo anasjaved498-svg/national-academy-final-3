@@ -49,6 +49,12 @@ export default function Home() {
               >
                 View Student Portal
               </Link>
+              <Link
+                href="/quran/reviews"
+                className="inline-flex w-full sm:w-auto justify-center items-center gap-2 px-6 py-3 rounded-full border border-[var(--line)] bg-[var(--surface)] font-medium hover:border-[var(--primary)] transition-colors"
+              >
+                Read Reviews
+              </Link>
             </div>
 
             <div className="mt-8 sm:mt-10 grid grid-cols-3 gap-3 sm:gap-6 max-w-md">
