@@ -15,7 +15,7 @@ function initials(name: string) {
     .toUpperCase();
 }
 
-export default function Testimonials() {
+export default function Reviews() {
   const { quranReviews, addQuranReview } = useStore();
   const approved = useMemo(() => quranReviews.filter((r) => r.approved), [quranReviews]);
 
@@ -112,7 +112,7 @@ export default function Testimonials() {
             approved.map((t) => (
               <article
                 key={t.id}
-                className="group relative shrink-0 w-[88%] sm:w-[48%] lg:w-[32%] snap-start overflow-hidden rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-6 hover:border-[var(--line-bright)] hover:-translate-y-0.5 transition-all"
+                className="group relative shrink-0 w-[88%] sm:w-[48%] lg:w-[32%] min-h-[235px] snap-start overflow-hidden rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-6 flex flex-col hover:border-[var(--line-bright)] hover:-translate-y-0.5 transition-all"
               >
                 <div
                   className="absolute top-0 left-0 right-0 h-[2px]"
@@ -135,7 +135,7 @@ export default function Testimonials() {
                 <p className="text-sm text-[var(--ink-soft)] leading-relaxed italic min-h-[118px]">
                   &ldquo;{t.review}&rdquo;
                 </p>
-                <div className="mt-5 flex items-center gap-3">
+                <div className="mt-5 flex items-center gap-3 mt-auto">
                   <div className="w-10 h-10 rounded-full bg-[var(--primary)] text-white flex items-center justify-center text-sm font-bold shrink-0">
                     {initials(t.name) || "?"}
                   </div>
