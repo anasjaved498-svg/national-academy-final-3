@@ -968,7 +968,9 @@ footer{background:rgba(255,255,255,0.98);border-top:1px solid var(--border);padd
 
     <div class="review-form-box reveal">
       <div class="review-form-title">✍️ Share Your Experience</div>
-      <div class="review-form-subtitle">Your honest feedback helps other families make the right decision. Reviews go live after approval.</div>
+     <div class="review-form-subtitle">
+  Your honest feedback helps other families make the right decision.
+</div>
       <div class="star-picker" id="starPicker">
         <span data-val="1" onclick="setRating(1)">⭐</span>
         <span data-val="2" onclick="setRating(2)">⭐</span>
@@ -1452,14 +1454,27 @@ function initCarouselDrag(){
 
 async function loadReviews(){
   try {
-    const res = await supaFetch('/rest/v1/reviews?select=*&order=created_at.asc', {method:'GET'});
-    if(!res.ok) return;
+    const res = await supaFetch(
+      '/rest/v1/reviews?select=*&order=created_at.asc',
+      { method:'GET' }
+    );
+
+    if(!res.ok){
+      console.error('Reviews fetch failed:', res.status, await res.text());
+      return;
+    }
+
     const data = await res.json();
-    allReviews = data || [];
+
+    allReviews = Array.isArray(data) ? data : [];
+
     renderCarousel();
     updateFormRatingBadge();
     setupReviewsRealtime();
-  } catch(e){ console.warn('Reviews load error:', e); }
+
+  } catch(e){
+    console.error('Reviews load error:', e);
+  }
 }
 
 function updateFormRatingBadge(){
@@ -1473,40 +1488,90 @@ function updateFormRatingBadge(){
 
 function setupReviewsRealtime(){
   try {
-    const wsUrl = SUPA_URL.replace('https','wss') + '/realtime/v1/websocket?apikey=' + SUPA_KEY + '&vsn=1.0.0';
+    const wsUrl =
+      SUPA_URL.replace('https','wss') +
+      '/realtime/v1/websocket?apikey=' +
+      SUPA_KEY +
+      '&vsn=1.0.0';
+
     const ws = new WebSocket(wsUrl);
+
     ws.onopen = () => {
       ws.send(JSON.stringify({
         topic:'realtime:public:reviews',
         event:'phx_join',
-        payload:{ config:{ postgres_changes:[{event:'UPDATE', schema:'public', table:'reviews'}] } },
+        payload:{
+          config:{
+            postgres_changes:[
+              {
+                event:'INSERT',
+                schema:'public',
+                table:'reviews'
+              },
+              {
+                event:'UPDATE',
+                schema:'public',
+                table:'reviews'
+              },
+              {
+                event:'DELETE',
+                schema:'public',
+                table:'reviews'
+              }
+            ]
+          }
+        },
         ref:'2'
       }));
     };
+
     ws.onmessage = (evt) => {
       try {
         const msg = JSON.parse(evt.data);
-        if(msg.payload && msg.payload.data && msg.payload.data.record){
-          const rv = msg.payload.data.record;
-          if(rv.approved){
-            // Add to carousel only if not already there
+
+        if(msg.payload && msg.payload.data){
+          const data = msg.payload.data;
+          const rv = data.record;
+          const oldRv = data.old_record;
+
+          // New review
+          if(msg.event === 'postgres_changes' && rv){
             const exists = allReviews.some(r => r.id === rv.id);
+
             if(!exists){
               allReviews.push(rv);
+
               const track = document.getElementById('reviewsTrack');
               const card = buildReviewCard(rv, true);
+
               applyCardWidths_single(card);
               track.appendChild(card);
+
               buildDots();
               updateFormRatingBadge();
-              setTimeout(()=>applyCarouselPos(Math.max(0, allReviews.length - cardsVisible), true), 300);
+
+              setTimeout(() => {
+                applyCarouselPos(
+                  Math.max(0, allReviews.length - cardsVisible),
+                  true
+                );
+              }, 300);
             }
           }
         }
-      } catch(e){}
+
+      } catch(e){
+        console.warn('Realtime review message error:', e);
+      }
     };
-    ws.onerror = ()=>{};
-  } catch(e){}
+
+    ws.onerror = (err) => {
+      console.warn('Reviews realtime error:', err);
+    };
+
+  } catch(e){
+    console.warn('Reviews realtime setup error:', e);
+  }
 }
 
 function applyCardWidths_single(card){
@@ -1580,7 +1645,12 @@ async function submitReview(){
     try {
       const fallback = await supaFetch('/rest/v1/reviews', {
         method: 'POST',
-        body: JSON.stringify({ name, role, review, rating: selectedRating, approved: false }),
+       body: JSON.stringify({
+  name,
+  role,
+  review,
+  rating: selectedRating
+}),
         headers: { 'Prefer': 'return=representation' }
       });
       if(fallback.status === 200 || fallback.status === 201){
