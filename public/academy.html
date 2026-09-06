@@ -1452,7 +1452,7 @@ function initCarouselDrag(){
 
 async function loadReviews(){
   try {
-    const res = await supaFetch('/rest/v1/reviews?select=*&approved=eq.true&order=created_at.asc', {method:'GET'});
+    const res = await supaFetch('/rest/v1/reviews?select=*&order=created_at.asc', {method:'GET'});
     if(!res.ok) return;
     const data = await res.json();
     allReviews = data || [];
