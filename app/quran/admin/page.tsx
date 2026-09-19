@@ -7,9 +7,13 @@ import { Users, AlertTriangle, Ban, Megaphone } from "lucide-react";
 export default function AdminDashboard() {
   const { students, announcements } = useStore();
 
-  const active = students.filter((s) => s.status === "active").length;
-  const warned = students.filter((s) => s.status === "warned").length;
-  const rejected = students.filter((s) => s.status === "rejected").length;
+  const active = students.filter((s) => s.status === "active" && s.testStatus === "active").length;
+  const warned = students.filter(
+    (s) => s.status === "warned" || s.testStatus === "warned"
+  ).length;
+  const rejected = students.filter(
+    (s) => s.status === "rejected" || s.testStatus === "rejected"
+  ).length;
 
   return (
     <div className="space-y-8">
@@ -32,7 +36,7 @@ export default function AdminDashboard() {
           </p>
           <div className="mt-3 space-y-2">
             {students
-              .filter((s) => s.status === "warned")
+              .filter((s) => s.status === "warned" || s.testStatus === "warned")
               .map((s) => (
                 <Link
                   key={s.id}
@@ -40,8 +44,10 @@ export default function AdminDashboard() {
                   className="flex items-center justify-between text-sm bg-[var(--surface)] rounded-lg px-4 py-2.5 hover:shadow-sm"
                 >
                   <span className="font-medium text-[var(--ink)]">{s.name}</span>
-                  <span className="text-xs text-[var(--rose)]">
-                    {s.consecutiveFails} consecutive fails
+                  <span className="text-xs text-[var(--rose)] text-right">
+                    {s.status === "warned" && `${s.consecutiveFails} consecutive daily fails`}
+                    {s.status === "warned" && s.testStatus === "warned" && " · "}
+                    {s.testStatus === "warned" && `${s.consecutiveTestFails} consecutive test fails`}
                   </span>
                 </Link>
               ))}
