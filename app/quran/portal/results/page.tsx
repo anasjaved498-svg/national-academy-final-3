@@ -4,7 +4,7 @@ import { useStore } from "@/lib/store";
 import WarningBanner from "@/components/WarningBanner";
 import { CheckCircle2, XCircle, Sparkles } from "lucide-react";
 import { portalAccess } from "@/lib/types";
-import { getResultFields } from "@/lib/calculations";
+import { getOverallResultStatus, getResultFields, resultPerformance } from "@/lib/calculations";
 
 export default function ResultsPage() {
   const { students, auth } = useStore();
@@ -40,7 +40,7 @@ export default function ResultsPage() {
       <div className="space-y-6">
         {sorted.map((r) => {
           const fields = getResultFields(r);
-          const resultStatus = r.failedSubjects.length > 0 || r.overallPercent < r.requiredPercent ? "fail" : "pass";
+          const resultStatus = getOverallResultStatus(r);
           return (
             <div key={r.id} className="rounded-2xl border border-[var(--line)] bg-[var(--surface)] overflow-hidden">
               <div className="flex items-center justify-between px-6 py-4 bg-[var(--primary-tint)]">
@@ -50,14 +50,6 @@ export default function ResultsPage() {
                     {r.date} · Paper #{r.paperNumber || "—"} · Passing mark: {r.requiredPercent}%
                   </p>
                 </div>
-                <span
-                  className={`inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full ${
-                    resultStatus === "pass" ? "bg-[var(--primary)] text-white" : "bg-[var(--rose)] text-white"
-                  }`}
-                >
-                  {resultStatus === "pass" ? <CheckCircle2 size={13} /> : <XCircle size={13} />}
-                  {resultStatus === "pass" ? "Passed" : "Needs Improvement"}
-                </span>
               </div>
 
               <div className="p-6 overflow-x-auto">
@@ -74,11 +66,9 @@ export default function ResultsPage() {
                   <tbody className="divide-y divide-[var(--line)]">
                     {fields.map((field) => {
                       const key = field.name.trim().toLowerCase();
-                      const isStandardSubject = ["nurani qaida", "nazra", "tajweed"].includes(key);
                       const percent = field.total > 0 ? Math.round((field.obtained / field.total) * 1000) / 10 : 0;
-                      const subjectKey = key === "nurani qaida" ? "nuraniQaida" : key === "nazra" ? "nazra" : "tajweed";
-                      const failed = isStandardSubject && r.failedSubjects.includes(subjectKey);
                       const displayName = key === "paper" && r.paperNumber ? `Paper #${r.paperNumber}` : field.name;
+                      const performance = resultPerformance(field.obtained, field.total);
 
                       return (
                         <ResultFieldRow
@@ -87,8 +77,7 @@ export default function ResultsPage() {
                           obtained={field.obtained}
                           total={field.total}
                           percent={percent}
-                          status={!isStandardSubject ? "Recorded" : failed ? "Fail" : "Pass"}
-                          failed={failed}
+                          status={performance ?? "Not Good"}
                         />
                       );
                     })}
@@ -113,19 +102,21 @@ export default function ResultsPage() {
                       <td className="pt-3">{r.overallObtained}</td>
                       <td className="pt-3">{r.overallTotal}</td>
                       <td className="pt-3">{r.overallPercent}%</td>
-                      <td className="pt-3">—</td>
+                      <td className="pt-3">
+                        <span
+                          className={`inline-flex items-center gap-1.5 text-xs font-semibold px-2 py-0.5 rounded-full ${
+                            resultStatus === "pass"
+                              ? "bg-[var(--primary-tint)] text-[var(--heading)]"
+                              : "bg-[var(--rose-tint)] text-[var(--rose)]"
+                          }`}
+                        >
+                          {resultStatus === "pass" ? <CheckCircle2 size={12} /> : <XCircle size={12} />}
+                          {resultStatus === "pass" ? "Pass" : "Fail"}
+                        </span>
+                      </td>
                     </tr>
                   </tbody>
                 </table>
-                {r.failedSubjects.length > 0 && (
-                  <p className="mt-4 text-xs text-[var(--rose)] bg-[var(--rose-tint)] rounded-lg px-3 py-2">
-                    {student.name} needs improvement in{" "}
-                    {r.failedSubjects
-                      .map((s) => (s === "nazra" ? "Nazra" : s === "tajweed" ? "Tajweed" : "Nurani Qaida"))
-                      .join(" and ")}{" "}
-                    — below the required {r.requiredPercent}% for this test.
-                  </p>
-                )}
               </div>
             </div>
           );
@@ -141,14 +132,12 @@ function ResultFieldRow({
   total,
   percent,
   status,
-  failed,
 }: {
   name: string;
   obtained: number;
   total: number;
   percent: number;
-  status: "Pass" | "Fail" | "Recorded";
-  failed: boolean;
+  status: "Excellent" | "Good" | "Average" | "Not Good";
 }) {
   return (
     <tr>
@@ -159,11 +148,13 @@ function ResultFieldRow({
       <td className="py-2.5">
         <span
           className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
-            status === "Fail"
-              ? "bg-[var(--rose-tint)] text-[var(--rose)]"
-              : status === "Pass"
+            status === "Excellent"
+              ? "bg-[var(--primary)] text-white"
+              : status === "Good"
               ? "bg-[var(--primary-tint)] text-[var(--heading)]"
-              : "bg-[var(--bg)] text-[var(--ink-faint)]"
+              : status === "Average"
+              ? "bg-[var(--gold-soft)] text-[var(--gold)]"
+              : "bg-[var(--rose-tint)] text-[var(--rose)]"
           }`}
         >
           {status}
