@@ -40,6 +40,7 @@ export default function ResultsPage() {
       <div className="space-y-6">
         {sorted.map((r) => {
           const fields = getResultFields(r);
+          const resultStatus = r.failedSubjects.length > 0 || r.overallPercent < r.requiredPercent ? "fail" : "pass";
           return (
             <div key={r.id} className="rounded-2xl border border-[var(--line)] bg-[var(--surface)] overflow-hidden">
               <div className="flex items-center justify-between px-6 py-4 bg-[var(--primary-tint)]">
@@ -51,11 +52,11 @@ export default function ResultsPage() {
                 </div>
                 <span
                   className={`inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full ${
-                    r.status === "pass" ? "bg-[var(--primary)] text-white" : "bg-[var(--rose)] text-white"
+                    resultStatus === "pass" ? "bg-[var(--primary)] text-white" : "bg-[var(--rose)] text-white"
                   }`}
                 >
-                  {r.status === "pass" ? <CheckCircle2 size={13} /> : <XCircle size={13} />}
-                  {r.status === "pass" ? "Passed" : "Needs Improvement"}
+                  {resultStatus === "pass" ? <CheckCircle2 size={13} /> : <XCircle size={13} />}
+                  {resultStatus === "pass" ? "Passed" : "Needs Improvement"}
                 </span>
               </div>
 
