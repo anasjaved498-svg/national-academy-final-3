@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useStore } from "@/lib/store";
 import { AlertTriangle, Ban, CheckCircle2, RotateCcw, XCircle, Sparkles, Wallet, Check, Plus, Trash2, Award } from "lucide-react";
 import { COURSE_CONFIG, ResultField } from "@/lib/types";
-import { getResultFields } from "@/lib/calculations";
+import { getOverallResultStatus, getResultFields } from "@/lib/calculations";
 import { newUuid } from "@/lib/id";
 
 export default function StudentDetail() {
@@ -407,7 +407,7 @@ export default function StudentDetail() {
             <p className="text-sm text-[var(--ink-faint)]">No results recorded yet.</p>
           )}
           {sortedResults.map((r) => {
-            const resultStatus = r.failedSubjects.length > 0 || r.overallPercent < r.requiredPercent ? "fail" : "pass";
+            const resultStatus = getOverallResultStatus(r);
             return (
             <div
               key={r.id}
