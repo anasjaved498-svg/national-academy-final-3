@@ -406,7 +406,9 @@ export default function StudentDetail() {
           {sortedResults.length === 0 && (
             <p className="text-sm text-[var(--ink-faint)]">No results recorded yet.</p>
           )}
-          {sortedResults.map((r) => (
+          {sortedResults.map((r) => {
+            const resultStatus = r.failedSubjects.length > 0 || r.overallPercent < r.requiredPercent ? "fail" : "pass";
+            return (
             <div
               key={r.id}
               className="flex items-center justify-between rounded-xl border border-[var(--line)] bg-[var(--surface)] px-5 py-3 text-sm"
@@ -424,14 +426,15 @@ export default function StudentDetail() {
               </div>
               <span
                 className={`inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1 rounded-full ${
-                  r.status === "pass" ? "bg-[var(--primary-tint)] text-[var(--heading)]" : "bg-[var(--rose-tint)] text-[var(--rose)]"
+                  resultStatus === "pass" ? "bg-[var(--primary-tint)] text-[var(--heading)]" : "bg-[var(--rose-tint)] text-[var(--rose)]"
                 }`}
               >
-                {r.status === "pass" ? <CheckCircle2 size={12} /> : <XCircle size={12} />}
-                {r.status === "pass" ? "Pass" : "Fail"}
+                {resultStatus === "pass" ? <CheckCircle2 size={12} /> : <XCircle size={12} />}
+                {resultStatus === "pass" ? "Pass" : "Fail"}
               </span>
             </div>
-          ))}
+            );
+          })}
         </div>
       </div>
       )}
