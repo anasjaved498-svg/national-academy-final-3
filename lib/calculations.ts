@@ -6,6 +6,27 @@ export function pct(entry: TestResultEntry | null | undefined): number | null {
 }
 
 /**
+ * Performance label for any complete-result field. This is informational only;
+ * final Pass/Fail is decided from the overall percentage below.
+ */
+export type ResultPerformance = "Excellent" | "Good" | "Average" | "Not Good";
+
+export function resultPerformance(obtained: number, total: number): ResultPerformance | null {
+  if (!Number.isFinite(obtained) || !Number.isFinite(total) || total <= 0) return null;
+  const percentage = (obtained / total) * 100;
+  if (percentage >= 80) return "Excellent";
+  if (percentage >= 60) return "Good";
+  if (percentage >= 40) return "Average";
+  return "Not Good";
+}
+
+export function getOverallResultStatus(result: Pick<TestResult, "overallObtained" | "overallTotal" | "requiredPercent">): "pass" | "fail" {
+  if (result.overallTotal <= 0) return "fail";
+  const overallPercentage = (result.overallObtained / result.overallTotal) * 100;
+  return overallPercentage >= result.requiredPercent ? "pass" : "fail";
+}
+
+/**
  * Returns the flexible result rows used by the Complete Result screen.
  * Older records did not have resultFields, so they are reconstructed from
  * their existing fixed subject fields for backwards compatibility.
@@ -100,11 +121,7 @@ export function computeResult(input: {
   }
 
   const overallPercent = overallTotal > 0 ? Math.round((overallObtained / overallTotal) * 1000) / 10 : 0;
-
-  // The overall passing threshold also applies to the complete combined result.
-  // A result is therefore a fail when any required subject fails OR when the
-  // combined obtained/total percentage is below the passing mark.
-  const overallFails = overallPercent < input.requiredPercent;
+  const overallStatus = overallTotal > 0 && (overallObtained / overallTotal) * 100 >= input.requiredPercent ? "pass" : "fail";
 
   return {
     id: input.id,
@@ -123,7 +140,7 @@ export function computeResult(input: {
     overallObtained,
     overallTotal,
     overallPercent,
-    status: failedSubjects.length > 0 || overallFails ? "fail" : "pass",
+    status: overallStatus,
     failedSubjects,
   };
 }
