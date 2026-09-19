@@ -101,6 +101,11 @@ export function computeResult(input: {
 
   const overallPercent = overallTotal > 0 ? Math.round((overallObtained / overallTotal) * 1000) / 10 : 0;
 
+  // The overall passing threshold also applies to the complete combined result.
+  // A result is therefore a fail when any required subject fails OR when the
+  // combined obtained/total percentage is below the passing mark.
+  const overallFails = overallPercent < input.requiredPercent;
+
   return {
     id: input.id,
     testNumber: input.testNumber,
@@ -118,7 +123,7 @@ export function computeResult(input: {
     overallObtained,
     overallTotal,
     overallPercent,
-    status: failedSubjects.length > 0 ? "fail" : "pass",
+    status: failedSubjects.length > 0 || overallFails ? "fail" : "pass",
     failedSubjects,
   };
 }
