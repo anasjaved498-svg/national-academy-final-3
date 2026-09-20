@@ -1,7 +1,9 @@
 "use client";
 
+import { useEffect } from "react";
 import { useStore } from "@/lib/store";
 import { Megaphone, Pin, User } from "lucide-react";
+import { markSeen } from "@/lib/seenTracker";
 
 export default function PortalAnnouncements() {
   const { announcements, auth } = useStore();
@@ -11,6 +13,12 @@ export default function PortalAnnouncements() {
   const sorted = [...relevant].sort(
     (a, b) => Number(b.pinned) - Number(a.pinned) || b.date.localeCompare(a.date)
   );
+
+  useEffect(() => {
+    if (auth.studentId) markSeen("announcements", auth.studentId, relevant.map((a) => a.id));
+    // Only re-run when the set of relevant announcements actually changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [auth.studentId, relevant.map((a) => a.id).join(",")]);
 
   return (
     <div className="space-y-6">
