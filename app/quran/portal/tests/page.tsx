@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useStore } from "@/lib/store";
 import { ClipboardList, CheckCircle2, Clock, ShieldAlert } from "lucide-react";
 import { portalAccess, Section } from "@/lib/types";
+import { markSeen } from "@/lib/seenTracker";
 
 const SECTION_LABEL: Record<Section, string> = { quran: "Quran", academy: "Academy" };
 
@@ -32,6 +33,12 @@ export default function TestsPage() {
   const activeSection: Section = studentSections.includes(tab) ? tab : studentSections[0];
   const published = exams.filter((e) => e.isPublished && studentSections.includes(e.section));
   const visible = hasBoth ? published.filter((e) => e.section === activeSection) : published;
+
+  useEffect(() => {
+    if (auth.studentId) markSeen("tests", auth.studentId, published.map((e) => e.id));
+    // Only re-run when the set of published-and-visible-to-me tests changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [auth.studentId, published.map((e) => e.id).join(",")]);
 
   if (student?.testStatus === "rejected") {
     return (
