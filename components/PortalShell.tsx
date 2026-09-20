@@ -10,6 +10,9 @@ export interface PortalNavItem {
   href: string;
   label: string;
   icon: React.ComponentType<{ size?: number }>;
+  // Shows a small "new" dot next to the label — used for unread
+  // announcements/tests. Purely visual; doesn't affect navigation.
+  badge?: boolean;
 }
 
 export default function PortalShell({
@@ -107,6 +110,9 @@ export default function PortalShell({
                       }`}
                     >
                       <Icon size={17} /> {n.label}
+                      {n.badge && (
+                        <span className={`w-2 h-2 rounded-full shrink-0 ${active ? "bg-white" : "bg-[var(--rose)]"}`} />
+                      )}
                     </Link>
                   );
                 })}
@@ -171,6 +177,9 @@ export default function PortalShell({
                     }`}
                   >
                     <Icon size={16} /> {n.label}
+                    {n.badge && (
+                      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${active ? "bg-white" : "bg-[var(--rose)]"}`} />
+                    )}
                   </Link>
                 );
               })}
