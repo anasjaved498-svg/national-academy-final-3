@@ -1,11 +1,13 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import RequireRole from "@/components/RequireRole";
 import PortalShell from "@/components/PortalShell";
 import { useStore } from "@/lib/store";
 import { LayoutDashboard, LineChart, FileText, Megaphone, ClipboardList, Award, Activity, Wallet, Mic } from "lucide-react";
 import { portalAccess } from "@/lib/types";
+import { getSeenIds } from "@/lib/seenTracker";
 
 const baseNav = [
   { href: "/quran/portal", label: "Dashboard", icon: LayoutDashboard },
@@ -32,10 +34,38 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
 }
 
 function PortalShellWrapper({ children }: { children: React.ReactNode }) {
-  const { logout, students, auth } = useStore();
+  const { logout, students, auth, announcements, exams } = useStore();
   const router = useRouter();
   const student = students.find((s) => s.id === auth.studentId);
   const access = student ? portalAccess(student) : null;
+
+  // Recomputed on every render from localStorage — cheap, and it means the
+  // dot disappears immediately after visiting the page without needing a
+  // page reload (the announcements/tests pages call markSeen() on mount).
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    // Re-check once shortly after mount, in case a page's markSeen() call
+    // (also on mount) hasn't run yet on first paint.
+    const t = setTimeout(() => setTick((v) => v + 1), 300);
+    return () => clearTimeout(t);
+  }, []);
+
+  let hasNewAnnouncement = false;
+  let hasNewTest = false;
+  if (student) {
+    const relevantAnnouncements = announcements.filter(
+      (a) => a.audience === "all" || a.audience === student.id
+    );
+    const seenAnnouncementIds = getSeenIds("announcements", student.id);
+    hasNewAnnouncement = relevantAnnouncements.some((a) => !seenAnnouncementIds.has(a.id));
+
+    const relevantExams = exams.filter((e) => e.isPublished && student.sections.includes(e.section));
+    const seenTestIds = getSeenIds("tests", student.id);
+    hasNewTest = relevantExams.some((e) => !seenTestIds.has(e.id));
+  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  void tick;
+
   const nav = [
     ...baseNav.filter((n) => {
       if (n.href === "/quran/portal/audio") return access?.showAudio ?? false;
@@ -43,8 +73,12 @@ function PortalShellWrapper({ children }: { children: React.ReactNode }) {
       if (n.href === "/quran/portal/progress") return access?.showProgress ?? false;
       return true;
     }),
-    ...(access?.showTests ? testsNav : []),
-    ...tailNav,
+    ...(access?.showTests
+      ? testsNav.map((n) => (n.href === "/quran/portal/tests" ? { ...n, badge: hasNewTest } : n))
+      : []),
+    ...tailNav.map((n) =>
+      n.href === "/quran/portal/announcements" ? { ...n, badge: hasNewAnnouncement } : n
+    ),
   ];
 
   return (
