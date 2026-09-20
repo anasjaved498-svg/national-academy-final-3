@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useStore } from "@/lib/store";
 import { ShieldAlert, Clock, CheckCircle2, AlertTriangle, Maximize } from "lucide-react";
 import { ExamAttempt } from "@/lib/types";
+import QuestionText from "@/components/QuestionText";
 
 // Deterministic per-string shuffle (mulberry32-style PRNG seeded from the
 // attempt id) so each student's question and option order is randomized but
@@ -436,7 +437,9 @@ export default function TakeExam() {
 
         <div className="rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-6">
           <p className="text-xs text-[var(--ink-faint)] mb-2">Question {currentQ + 1} of {shuffledQuestions.length}</p>
-          <p className="text-base font-medium text-[var(--ink)]">{q.text}</p>
+          <p className="text-base font-medium text-[var(--ink)]">
+            <QuestionText text={q.text} />
+          </p>
 
           <div className="mt-5 space-y-2.5">
             {q.options.map((opt) => (
