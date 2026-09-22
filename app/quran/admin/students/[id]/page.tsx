@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useStore } from "@/lib/store";
 import { AlertTriangle, Ban, CheckCircle2, RotateCcw, XCircle, Sparkles, Wallet, Check, Plus, Trash2, Award } from "lucide-react";
-import { COURSE_CONFIG, ResultField, Subject } from "@/lib/types";
+import { COURSE_CONFIG, ResultField, Subject, Student } from "@/lib/types";
 import { getResultFields } from "@/lib/calculations";
 import { newUuid } from "@/lib/id";
 
@@ -14,6 +14,8 @@ export default function StudentDetail() {
   const {
     students,
     addResult,
+    updateStudent,
+    deleteStudent,
     requiredPercentFor,
     criteriaFor,
     rejectStudent,
@@ -43,6 +45,9 @@ export default function StudentDetail() {
     defaultResultFields(student?.sections?.includes("quran") ? student.course : undefined)
   );
   const [qiratBonus, setQiratBonus] = useState(0);
+  const [resultSection, setResultSection] = useState<"quran" | "academy">(student?.sections?.includes("quran") ? "quran" : "academy");
+  const [editing, setEditing] = useState(false);
+  const [editForm, setEditForm] = useState(() => initialEditForm(student));
 
   // Overall + per-subject passing % — replaces the old separate "Passing
   // Criteria" page. Editable right here, right when marks are entered.
@@ -84,6 +89,9 @@ export default function StudentDetail() {
     setDate(new Date().toISOString().slice(0, 10));
     setResultFields(defaultResultFields(student?.sections?.includes("quran") ? student?.course : undefined));
     setQiratBonus(0);
+    setResultSection(student?.sections?.includes("quran") ? "quran" : "academy");
+    setEditForm(initialEditForm(student));
+    setEditing(false);
     // Deliberately keyed on the student id, not nextTestNumber — entering a
     // result for the SAME student should still auto-advance the test number
     // (handled separately after submit), not get reset by this effect.
@@ -139,6 +147,7 @@ export default function StudentDetail() {
       testNumber,
       paperNumber,
       date,
+      section: resultSection,
       resultFields: cleanedFields,
       qiratBonus: needsQirat ? qiratBonus : null,
       requiredPercent: overallPercent,
@@ -197,7 +206,8 @@ export default function StudentDetail() {
             · parent: {student.parentName || "—"} · code: {student.loginCode}
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
+          <button onClick={() => setEditing((v) => !v)} className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-[var(--line)] bg-[var(--surface)] text-sm font-medium hover:border-[var(--primary)]"><Sparkles size={14} /> {editing ? "Close Edit" : "Edit Student"}</button>
           <StatusPill status={student.status} />
           <StatusPill status={student.testStatus} label="Tests" />
           {student.status === "rejected" ? (
@@ -236,6 +246,76 @@ export default function StudentDetail() {
           )}
         </div>
       </div>
+
+      {editing && (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!editForm.name.trim() || editForm.sections.length === 0 || (editForm.sections.includes("academy") && !editForm.academyClass.trim()) || !editForm.loginCode.trim()) return;
+            updateStudent(student.id, {
+              name: editForm.name.trim(),
+              parentName: editForm.parentName.trim(),
+              sections: editForm.sections,
+              course: editForm.course,
+              level: editForm.level,
+              academyClass: editForm.academyClass.trim(),
+              loginCode: editForm.loginCode.trim(),
+            });
+            setEditing(false);
+          }}
+          className="rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-6 space-y-5"
+        >
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h2 className="font-display text-xl text-[var(--heading)]">Edit Student</h2>
+              <p className="text-xs text-[var(--ink-faint)] mt-1">Change the student's section, class, course, or portal code without creating a new account.</p>
+            </div>
+            <button type="button" onClick={() => setEditing(false)} className="text-sm text-[var(--ink-faint)] hover:text-[var(--ink)]">Cancel</button>
+          </div>
+          <div className="grid sm:grid-cols-2 gap-4">
+            <TextField label="Student name" value={editForm.name} onChange={(v) => setEditForm({ ...editForm, name: v })} required />
+            <TextField label="Parent name" value={editForm.parentName} onChange={(v) => setEditForm({ ...editForm, parentName: v })} />
+          </div>
+          <div>
+            <label className="text-sm font-medium text-[var(--ink)]">Sections</label>
+            <div className="mt-2 grid sm:grid-cols-2 gap-3">
+              {[
+                { key: "quran" as const, title: "Quran Academy" },
+                { key: "academy" as const, title: "Main Academy" },
+              ].map(({ key, title }) => {
+                const checked = editForm.sections.includes(key);
+                return (
+                  <button key={key} type="button" onClick={() => setEditForm({ ...editForm, sections: checked ? editForm.sections.filter((x) => x !== key) : [...editForm.sections, key] })} className={`rounded-xl border px-4 py-3 text-left text-sm ${checked ? "border-[var(--primary)] bg-[var(--primary-tint)] text-[var(--heading)]" : "border-[var(--line)] text-[var(--ink-soft)]"}`}>
+                    {checked ? "✓ " : "○ "}{title}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          {editForm.sections.includes("quran") && (
+            <div className="grid sm:grid-cols-2 gap-4">
+              <div>
+                <label className="text-sm font-medium text-[var(--ink)]">Quran course</label>
+                <select value={editForm.course} onChange={(e) => setEditForm({ ...editForm, course: e.target.value as typeof editForm.course })} className="mt-1.5 w-full rounded-xl border border-[var(--line)] bg-[var(--bg)] px-4 py-2.5 text-sm">
+                  <option>Nurani Qaida</option><option>Nazra</option><option>Tajweed</option><option>Qirat</option><option>All</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-sm font-medium text-[var(--ink)]">Level</label>
+                <select value={editForm.level} onChange={(e) => setEditForm({ ...editForm, level: e.target.value as typeof editForm.level })} className="mt-1.5 w-full rounded-xl border border-[var(--line)] bg-[var(--bg)] px-4 py-2.5 text-sm">
+                  <option>Beginner</option><option>Intermediate</option><option>Advanced</option>
+                </select>
+              </div>
+            </div>
+          )}
+          {editForm.sections.includes("academy") && <TextField label="Main Academy class" value={editForm.academyClass} onChange={(v) => setEditForm({ ...editForm, academyClass: v })} required />}
+          <TextField label="Portal access code" value={editForm.loginCode} onChange={(v) => setEditForm({ ...editForm, loginCode: v })} required />
+          <div className="flex flex-wrap gap-3">
+            <button className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-[var(--primary)] text-white text-sm font-medium"><Check size={14} /> Save Changes</button>
+            <button type="button" onClick={() => { if (confirm(`Remove ${student.name} completely? This deletes the student and their linked results, tests, performance, gifts, fees, notes and targeted announcements.`)) { deleteStudent(student.id); router.push("/quran/admin/students"); } }} className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full border border-[var(--rose)]/40 text-[var(--rose)] text-sm font-medium hover:bg-[var(--rose-tint)]"><Trash2 size={14} /> Remove Student</button>
+          </div>
+        </form>
+      )}
 
       {student.consecutiveFails === 2 && student.status !== "rejected" && (
         <Notice
@@ -410,6 +490,25 @@ export default function StudentDetail() {
             </div>
           </div>
         )}
+        {student.sections.length > 1 && (
+          <div className="mt-5 rounded-xl border border-[var(--line)] bg-[var(--bg)] p-4">
+            <label className="text-sm font-medium text-[var(--ink)]">Result section</label>
+            <select
+              value={resultSection}
+              onChange={(e) => {
+                const next = e.target.value as "quran" | "academy";
+                setResultSection(next);
+                setResultFields(defaultResultFields(next === "quran" ? student.course : undefined));
+                setQiratBonus(0);
+              }}
+              className="mt-1.5 w-full sm:w-72 rounded-xl border border-[var(--line)] bg-[var(--surface)] px-4 py-2.5 text-sm"
+            >
+              <option value="quran">Quran Academy</option>
+              <option value="academy">Main Academy</option>
+            </select>
+            <p className="mt-1 text-xs text-[var(--ink-faint)]">Choose which section this result belongs to so Quran and Academy records remain separate.</p>
+          </div>
+        )}
         <form onSubmit={submit} className="mt-5 space-y-5">
           <div className="grid sm:grid-cols-2 gap-4">
             <div>
@@ -497,6 +596,7 @@ export default function StudentDetail() {
               <input
                 type="number"
                 min={0}
+                step="0.01"
                 value={qiratBonus}
                 onChange={(e) => setQiratBonus(Number(e.target.value))}
                 className="w-40 rounded-xl border border-[var(--line)] bg-[var(--bg)] px-4 py-2.5 text-sm outline-none focus:border-[var(--primary)]"
@@ -607,6 +707,7 @@ function NumField({
       <input
         type="number"
         min={min}
+        step="0.01"
         value={value}
         onChange={(e) => onChange(Number(e.target.value))}
         className="mt-1 w-full rounded-xl border border-[var(--line)] bg-[var(--bg)] px-4 py-2.5 text-sm outline-none focus:border-[var(--primary)]"
@@ -626,6 +727,18 @@ function StatusPill({ status, label }: { status: "active" | "warned" | "rejected
       {label ? `${label}: ` : ""}{status}
     </span>
   );
+}
+
+function initialEditForm(student?: Student) {
+  return {
+    name: student?.name ?? "",
+    parentName: student?.parentName ?? "",
+    sections: (student?.sections ?? ["quran"]) as Student["sections"],
+    course: (student?.course ?? "Nazra") as Student["course"],
+    level: (student?.level ?? "Intermediate") as Student["level"],
+    academyClass: student?.academyClass ?? "",
+    loginCode: student?.loginCode ?? "",
+  };
 }
 
 function defaultResultFields(course?: "Nurani Qaida" | "Nazra" | "Tajweed" | "Qirat" | "All"): ResultField[] {
