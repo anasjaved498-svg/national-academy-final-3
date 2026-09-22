@@ -716,6 +716,32 @@ function NumField({
   );
 }
 
+function TextField({
+  label,
+  value,
+  onChange,
+  ...inputProps
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+} & Omit<InputHTMLAttributes<HTMLInputElement>, "value" | "onChange">) {
+  return (
+    <div>
+      <label className="text-sm font-medium text-[var(--ink)]">
+        {label}
+      </label>
+
+      <input
+        {...inputProps}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="mt-1.5 w-full rounded-xl border border-[var(--line)] bg-[var(--bg)] px-4 py-2.5 text-sm outline-none focus:border-[var(--primary)]"
+      />
+    </div>
+  );
+}
+
 function StatusPill({ status, label }: { status: "active" | "warned" | "rejected"; label?: string }) {
   const styles: Record<string, string> = {
     active: "bg-[var(--primary-tint)] text-[var(--heading)]",
