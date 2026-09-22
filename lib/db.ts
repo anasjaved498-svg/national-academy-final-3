@@ -11,6 +11,9 @@ import {
   TestFine,
   AudioSubmission,
   Note,
+  GiftRule,
+  Gift,
+  Fee,
 } from "./types";
 
 // ---------------------------------------------------------------------
@@ -119,6 +122,90 @@ export function noteToRow(n: Note) {
     audience: n.audience,
     section: n.section,
     pinned: n.pinned,
+  };
+}
+
+// ----- quran_gift_rules -----
+export function giftRuleFromRow(row: any): GiftRule {
+  return {
+    id: row.id,
+    section: row.section ?? "both",
+    category: row.category,
+    title: row.title,
+    description: row.description ?? "",
+    triggerType: row.trigger_type,
+    threshold: Number(row.threshold),
+    active: row.active ?? true,
+    createdAt: row.created_at,
+  };
+}
+export function giftRuleToRow(r: GiftRule) {
+  return {
+    id: r.id,
+    section: r.section,
+    category: r.category,
+    title: r.title,
+    description: r.description,
+    trigger_type: r.triggerType,
+    threshold: r.threshold,
+    active: r.active,
+  };
+}
+
+// ----- quran_gifts -----
+export function giftFromRow(row: any): Gift {
+  return {
+    id: row.id,
+    studentId: row.student_id,
+    section: row.section,
+    ruleId: row.rule_id ?? null,
+    category: row.category,
+    title: row.title,
+    description: row.description ?? "",
+    reason: row.reason ?? "",
+    awardKey: row.award_key,
+    awardedAt: row.awarded_at ?? row.created_at,
+  };
+}
+export function giftToRow(g: Gift) {
+  return {
+    id: g.id,
+    student_id: g.studentId,
+    section: g.section,
+    rule_id: g.ruleId,
+    category: g.category,
+    title: g.title,
+    description: g.description,
+    reason: g.reason,
+    award_key: g.awardKey,
+    awarded_at: g.awardedAt,
+  };
+}
+
+// ----- quran_fees -----
+export function feeFromRow(row: any): Fee {
+  return {
+    id: row.id,
+    studentId: row.student_id,
+    section: row.section,
+    title: row.title,
+    amount: Number(row.amount),
+    dueDate: row.due_date ?? null,
+    status: row.status ?? "pending",
+    note: row.note ?? "",
+    createdAt: row.created_at,
+  };
+}
+export function feeToRow(f: Fee) {
+  return {
+    id: f.id,
+    student_id: f.studentId,
+    section: f.section,
+    title: f.title,
+    amount: f.amount,
+    due_date: f.dueDate,
+    status: f.status,
+    note: f.note,
   };
 }
 
@@ -337,6 +424,30 @@ export async function syncDelete(table: string, id: string) {
   }
 }
 
+export async function deleteStudentCascade(studentId: string) {
+  // Delete children first because the existing schema uses foreign keys without
+  // ON DELETE CASCADE. Announcements/notes can target a student by audience.
+  const byStudent = [
+    "quran_test_fines",
+    "quran_performance_fines",
+    "quran_audio_submissions",
+    "quran_daily_ratings",
+    "quran_gifts",
+    "quran_fees",
+    "quran_exam_attempts",
+  ];
+  for (const table of byStudent) {
+    const { error } = await supabase.from(table).delete().eq("student_id", studentId);
+    if (error) throw new Error(`Could not delete student data from ${table}: ${error.message}`);
+  }
+  for (const table of ["quran_announcements", "quran_notes"]) {
+    const { error } = await supabase.from(table).delete().eq("audience", studentId);
+    if (error) throw new Error(`Could not delete targeted ${table}: ${error.message}`);
+  }
+  const { error } = await supabase.from("quran_students").delete().eq("id", studentId);
+  if (error) throw new Error(`Could not delete student: ${error.message}`);
+}
+
 // Fetches every table this app needs in parallel and maps each into the
 // app's camelCase shape. A failure on ANY table throws — the app must not
 // quietly render an empty student list when the database is unreachable or
@@ -354,6 +465,9 @@ export async function fetchAllData() {
     ["quran_test_fines", (rows) => rows.map(testFineFromRow)],
     ["quran_audio_submissions", (rows) => rows.map(audioFromRow)],
     ["quran_notes", (rows) => rows.map(noteFromRow)],
+    ["quran_gift_rules", (rows) => rows.map(giftRuleFromRow)],
+    ["quran_gifts", (rows) => rows.map(giftFromRow)],
+    ["quran_fees", (rows) => rows.map(feeFromRow)],
   ];
 
   const results = await Promise.all(
@@ -379,5 +493,8 @@ export async function fetchAllData() {
     testFines: results[8] as TestFine[],
     audioSubmissions: results[9] as AudioSubmission[],
     notes: results[10] as Note[],
+    giftRules: results[11] as GiftRule[],
+    gifts: results[12] as Gift[],
+    fees: results[13] as Fee[],
   };
 }
