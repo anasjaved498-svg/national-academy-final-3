@@ -1,7 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from "react";
-import { Announcement, PassingCriterion, Student, ResultField, Exam, ExamQuestion, ExamAttempt, ViolationType, QuranReview, DailyRatingEntry, DailyRating, PerformanceFine, TestFine, AudioSubmission, Section, Note, Subject } from "./types";
+import { Announcement, PassingCriterion, Student, ResultField, Exam, ExamQuestion, ExamAttempt, ViolationType, QuranReview, DailyRatingEntry, DailyRating, PerformanceFine, TestFine, AudioSubmission, Section, Note, Subject, GiftRule, Gift, Fee, FeeStatus } from "./types";
 import { seedAnnouncements, seedCriteria, seedStudents, seedQuranReviews } from "./seed";
 import { computeConsecutiveFails, computeResult } from "./calculations";
 import { buildMonthSummary, currentMonthKey } from "./performance";
@@ -22,6 +22,10 @@ import {
   testFineToRow,
   audioToRow,
   noteToRow,
+  giftRuleToRow,
+  giftToRow,
+  feeToRow,
+  deleteStudentCascade,
 } from "./db";
 
 interface AuthState {
@@ -41,6 +45,9 @@ interface StoreState {
   testFines: TestFine[];
   audioSubmissions: AudioSubmission[];
   notes: Note[];
+  giftRules: GiftRule[];
+  gifts: Gift[];
+  fees: Fee[];
   auth: AuthState;
   // True once the initial load has finished — pages can use this to show a
   // loading state instead of an empty flash.
@@ -53,12 +60,15 @@ interface StoreState {
   loginStudent: (code: string) => boolean;
   logout: () => void;
   addStudent: (s: Omit<Student, "id" | "results" | "status" | "consecutiveFails" | "consecutiveTestFails" | "testStatus">) => void;
+  updateStudent: (studentId: string, patch: Partial<Omit<Student, "id">>) => void;
+  deleteStudent: (studentId: string) => void;
   addResult: (
     studentId: string,
     data: {
       testNumber: number;
       paperNumber: string;
       date: string;
+      section?: Section;
       resultFields: ResultField[];
       qiratBonus: number | null;
       // Overall + optional per-subject passing % actually used for this
@@ -83,6 +93,16 @@ interface StoreState {
   // scoped to a Quran/Academy section)
   addNote: (n: Omit<Note, "id" | "createdAt">) => void;
   deleteNote: (id: string) => void;
+  // Gifts
+  addGiftRule: (r: Omit<GiftRule, "id" | "createdAt">) => void;
+  updateGiftRule: (r: GiftRule) => void;
+  deleteGiftRule: (id: string) => void;
+  addGift: (g: Omit<Gift, "id" | "awardedAt" | "awardKey" | "ruleId"> & { ruleId?: string | null; awardKey?: string }) => void;
+  deleteGift: (id: string) => void;
+  // Fees
+  addFee: (f: Omit<Fee, "id" | "createdAt">) => void;
+  updateFeeStatus: (id: string, status: FeeStatus) => void;
+  deleteFee: (id: string) => void;
   // Exams
   addExam: (e: {
     title: string;
@@ -140,6 +160,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [testFines, setTestFines] = useState<TestFine[]>([]);
   const [audioSubmissions, setAudioSubmissions] = useState<AudioSubmission[]>([]);
   const [notes, setNotes] = useState<Note[]>([]);
+  const [giftRules, setGiftRules] = useState<GiftRule[]>([]);
+  const [gifts, setGifts] = useState<Gift[]>([]);
+  const [fees, setFees] = useState<Fee[]>([]);
   const [auth, setAuth] = useState<AuthState>({ role: "guest" });
   const [hydrated, setHydrated] = useState(false);
   const [dataReady, setDataReady] = useState(false);
@@ -168,6 +191,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         setTestFines(data.testFines);
         setAudioSubmissions(data.audioSubmissions);
         setNotes(data.notes);
+        setGiftRules(data.giftRules);
+        setGifts(data.gifts);
+        setFees(data.fees);
       } catch {
         // Already showing an error; nothing more to do.
       }
@@ -183,6 +209,14 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   examsRef.current = exams;
   const attemptsRef = useRef(attempts);
   attemptsRef.current = attempts;
+  const giftRulesRef = useRef(giftRules);
+  giftRulesRef.current = giftRules;
+  const giftsRef = useRef(gifts);
+  giftsRef.current = gifts;
+  const feesRef = useRef(fees);
+  feesRef.current = fees;
+  const dailyRatingsRef = useRef(dailyRatings);
+  dailyRatingsRef.current = dailyRatings;
 
   // ---------- Initial load: Supabase ONLY ----------
   // No localStorage fallback. If the database can't be reached, the app
@@ -216,6 +250,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         setTestFines(data.testFines);
         setAudioSubmissions(data.audioSubmissions);
         setNotes(data.notes);
+        setGiftRules(data.giftRules);
+        setGifts(data.gifts);
+        setFees(data.fees);
         setDbError(null);
       } catch (err) {
         if (cancelled) return;
@@ -247,6 +284,86 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     if (!hydrated || typeof window === "undefined") return;
     window.sessionStorage.setItem("quran-academy-auth", JSON.stringify(auth));
   }, [auth, hydrated]);
+
+  const addGiftRecord = useCallback((gift: Gift) => {
+    if (giftsRef.current.some((g) => g.awardKey === gift.awardKey)) return;
+    giftsRef.current = [...giftsRef.current, gift];
+    setGifts((prev) => [...prev, gift]);
+    runWrite(syncUpsert("quran_gifts", giftToRow(gift)));
+  }, [runWrite]);
+
+  const sweepAutomaticGifts = useCallback(() => {
+    const today = new Date().toISOString().slice(0, 10);
+    const rules = giftRulesRef.current.filter((r) => r.active);
+    if (rules.length === 0) return;
+
+    for (const student of studentsRef.current) {
+      for (const result of student.results) {
+        const section = result.section ?? (student.sections.includes("academy") && !student.sections.includes("quran") ? "academy" : "quran");
+        for (const rule of rules) {
+          if (rule.triggerType !== "result_percent") continue;
+          if (rule.section !== "both" && rule.section !== section) continue;
+          if (result.overallPercent < rule.threshold) continue;
+          addGiftRecord({
+            id: newUuid(),
+            studentId: student.id,
+            section,
+            ruleId: rule.id,
+            category: rule.category,
+            title: rule.title,
+            description: rule.description,
+            reason: `Result Test ${result.testNumber}: ${result.overallPercent}%`,
+            awardKey: `result:${result.id}:rule:${rule.id}`,
+            awardedAt: new Date().toISOString(),
+          });
+        }
+      }
+
+      const monthKeys = new Set(
+        dailyRatingsRef.current
+          .filter((e) => e.studentId === student.id)
+          .map((e) => e.date.slice(0, 7))
+      );
+      for (const section of student.sections) {
+        for (const monthKey of monthKeys) {
+          const entries = dailyRatingsRef.current.filter(
+            (e) => e.studentId === student.id && e.section === section && e.date.startsWith(monthKey)
+          );
+          if (entries.length === 0) continue;
+          const summary = buildMonthSummary(monthKey, entries);
+          for (const week of summary.weeks) {
+            if (!week.completed) continue;
+            for (const rule of rules) {
+              if (rule.triggerType !== "weekly_performance") continue;
+              if (rule.section !== "both" && rule.section !== section) continue;
+              if (week.score < rule.threshold) continue;
+              addGiftRecord({
+                id: newUuid(),
+                studentId: student.id,
+                section,
+                ruleId: rule.id,
+                category: rule.category,
+                title: rule.title,
+                description: rule.description,
+                reason: `${monthKey} Week ${week.weekNumber}: weekly score ${week.score}`,
+                awardKey: `week:${student.id}:${section}:${monthKey}:${week.weekNumber}:rule:${rule.id}`,
+                awardedAt: `${week.endDate}T23:59:59.000Z`,
+              });
+            }
+          }
+        }
+      }
+    }
+    void today;
+  }, [addGiftRecord]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    sweepAutomaticGifts();
+    // The sweep is triggered by students, ratings, or rule changes. Gift writes
+    // themselves must not retrigger it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hydrated, students, dailyRatings, giftRules]);
 
   // Auto-fine sweep: whenever ratings (or the student list) change, check every
   // student's current-month performance summary — independently per section —
@@ -346,6 +463,31 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     runWrite(syncUpsert("quran_students", studentToRow(student)));
   };
 
+  const updateStudent: StoreState["updateStudent"] = (studentId, patch) => {
+    const current = studentsRef.current.find((s) => s.id === studentId);
+    if (!current) return;
+    const updated: Student = { ...current, ...patch };
+    if (!updated.sections.length) return;
+    if (!updated.sections.includes("academy")) updated.academyClass = "";
+    setStudents((prev) => prev.map((s) => (s.id === studentId ? updated : s)));
+    runWrite(syncUpsert("quran_students", studentToRow(updated)));
+  };
+
+  const deleteStudent: StoreState["deleteStudent"] = (studentId) => {
+    if (!studentsRef.current.some((s) => s.id === studentId)) return;
+    setStudents((prev) => prev.filter((s) => s.id !== studentId));
+    setAnnouncements((prev) => prev.filter((a) => a.audience !== studentId));
+    setNotes((prev) => prev.filter((n) => n.audience !== studentId));
+    setDailyRatings((prev) => prev.filter((x) => x.studentId !== studentId));
+    setPerformanceFines((prev) => prev.filter((x) => x.studentId !== studentId));
+    setTestFines((prev) => prev.filter((x) => x.studentId !== studentId));
+    setAttempts((prev) => prev.filter((x) => x.studentId !== studentId));
+    setAudioSubmissions((prev) => prev.filter((x) => x.studentId !== studentId));
+    setGifts((prev) => prev.filter((x) => x.studentId !== studentId));
+    setFees((prev) => prev.filter((x) => x.studentId !== studentId));
+    runWrite(deleteStudentCascade(studentId));
+  };
+
   const addResult: StoreState["addResult"] = (studentId, data) => {
     const s = studentsRef.current.find((x) => x.id === studentId);
     if (!s) return;
@@ -354,13 +496,21 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       testNumber: data.testNumber,
       paperNumber: data.paperNumber,
       date: data.date,
+      section: data.section ?? (s.sections.includes("academy") && !s.sections.includes("quran") ? "academy" : "quran"),
       course: s.course,
       resultFields: data.resultFields,
       qiratBonus: data.qiratBonus,
       requiredPercent: data.requiredPercent,
       subjectRequiredPercents: data.subjectRequiredPercents,
     });
-    const results = [...s.results.filter((r) => r.testNumber !== data.testNumber), newResult];
+    const resultSection = data.section ?? (s.sections.includes("academy") && !s.sections.includes("quran") ? "academy" : "quran");
+    const results = [
+      ...s.results.filter((r) => {
+        const existingSection = r.section ?? "quran";
+        return !(r.testNumber === data.testNumber && existingSection === resultSection);
+      }),
+      newResult,
+    ];
     const consecutiveFails = computeConsecutiveFails(results);
     const status: Student["status"] =
       s.status === "rejected"
@@ -437,6 +587,69 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const deleteNote = (id: string) => {
     setNotes((prev) => prev.filter((n) => n.id !== id));
     runWrite(syncDelete("quran_notes", id));
+  };
+
+  // ---------- Gifts ----------
+
+  const addGiftRule: StoreState["addGiftRule"] = (r) => {
+    const rule: GiftRule = { ...r, id: newUuid(), createdAt: new Date().toISOString() };
+    setGiftRules((prev) => [rule, ...prev]);
+    runWrite(syncUpsert("quran_gift_rules", giftRuleToRow(rule)));
+  };
+
+  const updateGiftRule: StoreState["updateGiftRule"] = (rule) => {
+    setGiftRules((prev) => prev.map((r) => (r.id === rule.id ? rule : r)));
+    runWrite(syncUpsert("quran_gift_rules", giftRuleToRow(rule)));
+  };
+
+  const deleteGiftRule = (id: string) => {
+    const linked = giftsRef.current.filter((g) => g.ruleId === id);
+    if (linked.length > 0) {
+      setGifts((prev) => prev.map((g) => (g.ruleId === id ? { ...g, ruleId: null } : g)));
+      linked.forEach((gift) => {
+        runWrite(syncUpsert("quran_gifts", giftToRow({ ...gift, ruleId: null })));
+      });
+      giftsRef.current = giftsRef.current.map((g) => (g.ruleId === id ? { ...g, ruleId: null } : g));
+    }
+    setGiftRules((prev) => prev.filter((r) => r.id !== id));
+    runWrite(syncDelete("quran_gift_rules", id));
+  };
+
+  const addGift: StoreState["addGift"] = (g) => {
+    const gift: Gift = {
+      ...g,
+      id: newUuid(),
+      ruleId: g.ruleId ?? null,
+      awardKey: g.awardKey ?? `manual:${newUuid()}`,
+      awardedAt: new Date().toISOString(),
+    };
+    addGiftRecord(gift);
+  };
+
+  const deleteGift = (id: string) => {
+    setGifts((prev) => prev.filter((g) => g.id !== id));
+    runWrite(syncDelete("quran_gifts", id));
+  };
+
+  // ---------- Fees ----------
+
+  const addFee: StoreState["addFee"] = (f) => {
+    const fee: Fee = { ...f, id: newUuid(), createdAt: new Date().toISOString() };
+    setFees((prev) => [fee, ...prev]);
+    runWrite(syncUpsert("quran_fees", feeToRow(fee)));
+  };
+
+  const updateFeeStatus: StoreState["updateFeeStatus"] = (id, status) => {
+    const fee = feesRef.current.find((f) => f.id === id);
+    if (!fee) return;
+    const updated = { ...fee, status };
+    setFees((prev) => prev.map((f) => (f.id === id ? updated : f)));
+    runWrite(syncUpsert("quran_fees", feeToRow(updated)));
+  };
+
+  const deleteFee = (id: string) => {
+    setFees((prev) => prev.filter((f) => f.id !== id));
+    runWrite(syncDelete("quran_fees", id));
   };
 
   // ---------- Exams ----------
@@ -735,6 +948,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     testFines,
     audioSubmissions,
     notes,
+    giftRules,
+    gifts,
+    fees,
     auth,
     dataReady,
     dbError,
@@ -743,6 +959,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     loginStudent,
     logout,
     addStudent,
+    updateStudent,
+    deleteStudent,
     addResult,
     requiredPercentFor,
     criteriaFor,
@@ -753,6 +971,14 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     deleteAnnouncement,
     addNote,
     deleteNote,
+    addGiftRule,
+    updateGiftRule,
+    deleteGiftRule,
+    addGift,
+    deleteGift,
+    addFee,
+    updateFeeStatus,
+    deleteFee,
     addExam,
     togglePublish,
     deleteExam,
