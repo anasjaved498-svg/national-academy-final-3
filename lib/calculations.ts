@@ -74,6 +74,7 @@ export function computeResult(input: {
   testNumber: number;
   paperNumber: string;
   date: string;
+  section?: "quran" | "academy";
   course: Course;
   resultFields: ResultField[];
   qiratBonus: number | null;
@@ -112,13 +113,14 @@ export function computeResult(input: {
     tajweed,
   };
 
-  // Only subjects that were actually included in this result can fail, and
-  // each is judged against its own threshold if one was set, otherwise the
-  // overall passing %.
-  const failedSubjects: Subject[] = config.requiredSubjects.filter((subj) => {
+  // Overall passing is the main rule. A subject can have an additional
+  // threshold only when the admin explicitly sets one for that subject.
+  // This prevents an overall 65% result from failing merely because a
+  // single subject happened to be below the overall threshold.
+  const failedSubjects: Subject[] = (Object.keys(input.subjectRequiredPercents ?? {}) as Subject[]).filter((subj) => {
     if (entryBySubject[subj] == null) return false;
-    const threshold = input.subjectRequiredPercents?.[subj] ?? input.requiredPercent;
-    return (percentBySubject[subj] ?? 0) < threshold;
+    const threshold = input.subjectRequiredPercents?.[subj];
+    return threshold != null && (percentBySubject[subj] ?? 0) < threshold;
   });
 
   let overallObtained = resultFields.reduce((sum, field) => sum + field.obtained, 0);
@@ -126,6 +128,9 @@ export function computeResult(input: {
   if (config.showQiratBonus && input.qiratBonus) {
     overallObtained += input.qiratBonus;
   }
+  // A bonus must never create an impossible percentage such as 107.1%.
+  // Keep the total and the displayed overall result on a 0–100 scale.
+  overallObtained = Math.min(overallObtained, overallTotal);
 
   const overallPercent = overallTotal > 0 ? Math.round((overallObtained / overallTotal) * 1000) / 10 : 0;
   // Advanced mode: passing requires BOTH the overall % to clear its own bar
@@ -140,6 +145,7 @@ export function computeResult(input: {
     testNumber: input.testNumber,
     paperNumber: input.paperNumber,
     date: input.date,
+    section: input.section,
     resultFields,
     nuraniQaida,
     nazra,
