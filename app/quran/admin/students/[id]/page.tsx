@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState, type InputHTMLAttributes } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useStore } from "@/lib/store";
 import { AlertTriangle, Ban, CheckCircle2, RotateCcw, XCircle, Sparkles, Wallet, Check, Plus, Trash2, Award } from "lucide-react";
-import { COURSE_CONFIG, ResultField, Subject, Student } from "@/lib/types";
+import { COURSE_CONFIG, ResultField, Subject, Student, Section, ManualFine } from "@/lib/types";
 import { getResultFields } from "@/lib/calculations";
 import { newUuid } from "@/lib/id";
 
@@ -22,8 +22,12 @@ export default function StudentDetail() {
     reinstateStudent,
     performanceFines,
     testFines,
+    manualFines,
     waivePerformanceFine,
     waiveTestFine,
+    addManualFine,
+    updateManualFineStatus,
+    deleteManualFine,
     exams,
     attempts,
     getAudioSubmission,
@@ -614,11 +618,16 @@ export default function StudentDetail() {
       {/* Fines */}
       <FinesSection
         studentId={student.id}
+        studentSections={student.sections}
         performanceFines={performanceFines.filter((f) => f.studentId === student.id && !f.waived)}
         testFines={testFines.filter((f) => f.studentId === student.id && !f.waived)}
+        manualFines={manualFines.filter((f) => f.studentId === student.id)}
         exams={exams}
         onWaivePerformance={waivePerformanceFine}
         onWaiveTest={waiveTestFine}
+        onAddManualFine={addManualFine}
+        onUpdateManualFineStatus={updateManualFineStatus}
+        onDeleteManualFine={deleteManualFine}
       />
 
       {/* Result history */}
@@ -801,58 +810,228 @@ function Notice({ icon, tone, text }: { icon: React.ReactNode; tone: "gold" | "r
 
 function FinesSection({
   studentId,
+  studentSections,
   performanceFines,
   testFines,
+  manualFines,
   exams,
   onWaivePerformance,
   onWaiveTest,
+  onAddManualFine,
+  onUpdateManualFineStatus,
+  onDeleteManualFine,
 }: {
   studentId: string;
+  studentSections: Section[];
   performanceFines: { id: string; monthKey: string; weekNumber: number; amount: number }[];
   testFines: { id: string; examId: string; streakPosition: number; amount: number }[];
+  manualFines: ManualFine[];
   exams: { id: string; title: string; testNumber: number }[];
   onWaivePerformance: (id: string) => void;
   onWaiveTest: (id: string) => void;
+  onAddManualFine: (f: Omit<ManualFine, "id" | "createdAt" | "status"> & { status?: ManualFine["status"] }) => void;
+  onUpdateManualFineStatus: (id: string, status: ManualFine["status"]) => void;
+  onDeleteManualFine: (id: string) => void;
 }) {
-  const total =
-    performanceFines.reduce((s, f) => s + f.amount, 0) + testFines.reduce((s, f) => s + f.amount, 0);
-  if (performanceFines.length === 0 && testFines.length === 0) return null;
+  const firstSection = studentSections[0] ?? "quran";
+  const [manualSection, setManualSection] = useState<Section>(firstSection);
+  const [manualAmount, setManualAmount] = useState("");
+  const [manualReason, setManualReason] = useState("");
+  const [manualDate, setManualDate] = useState(new Date().toISOString().slice(0, 10));
+
+  useEffect(() => {
+    if (!studentSections.includes(manualSection)) setManualSection(firstSection);
+  }, [firstSection, manualSection, studentSections]);
+
+  const pendingManualFines = manualFines.filter((f) => f.status === "pending");
+  const pendingTotal =
+    performanceFines.reduce((s, f) => s + f.amount, 0) +
+    testFines.reduce((s, f) => s + f.amount, 0) +
+    pendingManualFines.reduce((s, f) => s + f.amount, 0);
+
+  const submitManualFine = (e: React.FormEvent) => {
+    e.preventDefault();
+    const amount = Number(manualAmount);
+    const reason = manualReason.trim();
+    if (!Number.isFinite(amount) || amount <= 0) {
+      alert("Please enter a fine amount greater than 0.");
+      return;
+    }
+    if (!reason) {
+      alert("Please enter a reason for the fine.");
+      return;
+    }
+    if (!studentSections.includes(manualSection)) {
+      alert("Choose a section that this student is enrolled in.");
+      return;
+    }
+
+    onAddManualFine({
+      studentId,
+      section: manualSection,
+      amount,
+      reason,
+      fineDate: manualDate || new Date().toISOString().slice(0, 10),
+    });
+    setManualAmount("");
+    setManualReason("");
+    setManualDate(new Date().toISOString().slice(0, 10));
+  };
 
   return (
-    <div className="rounded-2xl border border-[var(--rose)]/30 bg-[var(--rose-tint)] p-6">
-      <div className="flex items-center justify-between">
-        <h2 className="font-display text-xl text-[var(--rose)] flex items-center gap-2">
-          <Wallet size={18} /> Pending Fines
-        </h2>
-        <span className="font-semibold text-[var(--rose)]">Rs. {total}</span>
-      </div>
-      <div className="mt-4 space-y-2">
-        {performanceFines.map((f) => (
-          <div key={f.id} className="flex items-center justify-between bg-[var(--surface)] rounded-xl px-4 py-2.5 text-sm">
-            <span>Daily Performance · {f.monthKey} · Week {f.weekNumber} — Rs. {f.amount}</span>
-            <button
-              onClick={() => onWaivePerformance(f.id)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[var(--primary)] text-white text-xs font-medium hover:bg-[var(--primary-dark)]"
-            >
-              <Check size={12} /> Mark Received
-            </button>
+    <div className="space-y-5">
+      <div className="rounded-2xl border border-[var(--rose)]/30 bg-[var(--rose-tint)] p-6">
+        <div className="flex items-center justify-between gap-4 flex-wrap">
+          <div>
+            <h2 className="font-display text-xl text-[var(--rose)] flex items-center gap-2">
+              <Wallet size={18} /> Fines
+            </h2>
+            <p className="text-xs text-[var(--ink-faint)] mt-1">
+              Automatic performance/test fines stay separate. Manual fines added here never change the student's automatic streaks.
+            </p>
           </div>
-        ))}
-        {testFines.map((f) => {
-          const exam = exams.find((e) => e.id === f.examId);
-          return (
-            <div key={f.id} className="flex items-center justify-between bg-[var(--surface)] rounded-xl px-4 py-2.5 text-sm">
-              <span>{exam ? `Test ${exam.testNumber} — ${exam.title}` : "Online Test"} · Fail #{f.streakPosition} — Rs. {f.amount}</span>
+          <span className="font-semibold text-[var(--rose)]">Pending: Rs. {pendingTotal}</span>
+        </div>
+
+        <form onSubmit={submitManualFine} className="mt-5 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <Plus size={15} className="text-[var(--link)]" />
+            <h3 className="font-semibold text-sm text-[var(--ink)]">Add Manual Fine</h3>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-4">
+            <div>
+              <label className="text-xs text-[var(--ink-faint)]">Section</label>
+              <select
+                value={manualSection}
+                onChange={(e) => setManualSection(e.target.value as Section)}
+                className="mt-1.5 w-full rounded-xl border border-[var(--line)] bg-[var(--bg)] px-4 py-2.5 text-sm"
+              >
+                {studentSections.map((section) => (
+                  <option key={section} value={section}>
+                    {section === "quran" ? "Quran" : "Academy"}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-[var(--ink-faint)]">Amount (Rs.)</label>
+              <input
+                type="number"
+                min="0.01"
+                step="0.01"
+                value={manualAmount}
+                onChange={(e) => setManualAmount(e.target.value)}
+                placeholder="100"
+                className="mt-1.5 w-full rounded-xl border border-[var(--line)] bg-[var(--bg)] px-4 py-2.5 text-sm"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-[var(--ink-faint)]">Date</label>
+              <input
+                type="date"
+                value={manualDate}
+                onChange={(e) => setManualDate(e.target.value)}
+                className="mt-1.5 w-full rounded-xl border border-[var(--line)] bg-[var(--bg)] px-4 py-2.5 text-sm"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-[var(--ink-faint)]">Reason</label>
+              <input
+                value={manualReason}
+                onChange={(e) => setManualReason(e.target.value)}
+                placeholder="Late / missing work / discipline"
+                className="mt-1.5 w-full rounded-xl border border-[var(--line)] bg-[var(--bg)] px-4 py-2.5 text-sm"
+              />
+            </div>
+          </div>
+          <button className="mt-3 inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-[var(--rose)] text-white text-sm font-medium hover:opacity-90">
+            <Plus size={14} /> Add Fine
+          </button>
+        </form>
+
+        {(performanceFines.length === 0 && testFines.length === 0 && pendingManualFines.length === 0) && (
+          <p className="mt-4 text-sm text-[var(--ink-faint)]">No pending fines. You can add a manual fine above.</p>
+        )}
+
+        <div className="mt-4 space-y-2">
+          {performanceFines.map((f) => (
+            <div key={f.id} className="flex items-center justify-between gap-3 bg-[var(--surface)] rounded-xl px-4 py-2.5 text-sm">
+              <span>Daily Performance · {f.monthKey} · Week {f.weekNumber} — Rs. {f.amount}</span>
               <button
-                onClick={() => onWaiveTest(f.id)}
+                onClick={() => onWaivePerformance(f.id)}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[var(--primary)] text-white text-xs font-medium hover:bg-[var(--primary-dark)]"
               >
                 <Check size={12} /> Mark Received
               </button>
             </div>
-          );
-        })}
+          ))}
+          {testFines.map((f) => {
+            const exam = exams.find((e) => e.id === f.examId);
+            return (
+              <div key={f.id} className="flex items-center justify-between gap-3 bg-[var(--surface)] rounded-xl px-4 py-2.5 text-sm">
+                <span>{exam ? `Test ${exam.testNumber} — ${exam.title}` : "Online Test"} · Fail #{f.streakPosition} — Rs. {f.amount}</span>
+                <button
+                  onClick={() => onWaiveTest(f.id)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[var(--primary)] text-white text-xs font-medium hover:bg-[var(--primary-dark)]"
+                >
+                  <Check size={12} /> Mark Received
+                </button>
+              </div>
+            );
+          })}
+          {pendingManualFines.map((f) => (
+            <div key={f.id} className="rounded-xl bg-[var(--surface)] px-4 py-3 text-sm space-y-2">
+              <div className="flex items-center justify-between gap-3">
+                <span>Manual · {f.section === "quran" ? "Quran" : "Academy"} · {f.fineDate} · Rs. {f.amount}</span>
+                <span className="text-xs font-semibold text-[var(--rose)]">Pending</span>
+              </div>
+              <p className="text-xs text-[var(--ink-faint)]">Reason: {f.reason}</p>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => onUpdateManualFineStatus(f.id, "received")}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[var(--primary)] text-white text-xs font-medium"
+                >
+                  <Check size={12} /> Mark Received
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onUpdateManualFineStatus(f.id, "waived")}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-[var(--line)] text-xs font-medium text-[var(--ink-soft)]"
+                >
+                  Waive
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (confirm("Delete this manual fine permanently?")) onDeleteManualFine(f.id);
+                  }}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-[var(--rose)]/40 text-[var(--rose)] text-xs font-medium"
+                >
+                  <Trash2 size={12} /> Delete
+                </button>
+              </div>
+            </div>
+          ))}
+
+          {manualFines.filter((f) => f.status !== "pending").length > 0 && (
+            <div className="pt-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-[var(--ink-faint)] mb-2">Manual Fine History</p>
+              {manualFines.filter((f) => f.status !== "pending").map((f) => (
+                <div key={f.id} className="flex items-center justify-between gap-3 bg-[var(--bg)] rounded-xl px-4 py-2.5 text-xs mb-2">
+                  <span>
+                    {f.section === "quran" ? "Quran" : "Academy"} · {f.fineDate} · Rs. {f.amount} · {f.reason}
+                  </span>
+                  <span className={f.status === "received" ? "text-[var(--primary)] font-semibold" : "text-[var(--ink-faint)] font-semibold"}>
+                    {f.status === "received" ? "Received" : "Waived"}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
 }
+
