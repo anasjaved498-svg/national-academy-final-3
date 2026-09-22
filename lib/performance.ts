@@ -68,8 +68,10 @@ export function buildMonthSummary(
       }
     }
 
+    const today = new Date().toISOString().slice(0, 10);
+    const completed = range.end < today;
     const endedBelowRedLine = score < PERFORMANCE_RED_LINE;
-    const fined = endedBelowRedLine; // only an unrecovered end-of-week dip is fined
+    const fined = completed && endedBelowRedLine; // only completed weeks can create a fine
     let fineAmount = 0;
     if (fined) {
       fineAmount = FINE_SCHEDULE[Math.min(offenseCount, FINE_SCHEDULE.length - 1)];
@@ -85,6 +87,7 @@ export function buildMonthSummary(
       fined,
       fineAmount,
       recoveredBeforeWeekEnd: recovered && !endedBelowRedLine,
+      completed,
     };
   });
 
