@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { markSeen } from "@/lib/seenTracker";
 import { useStore } from "@/lib/store";
 import { Award, ShieldAlert, Clock, Ban, CheckCircle2, XCircle, Wallet } from "lucide-react";
 import { portalAccess, Section } from "@/lib/types";
@@ -35,6 +36,10 @@ export default function TestResultsPage() {
     .filter((a) => studentSections.includes(examSection(a.examId)))
     .filter((a) => !hasBoth || examSection(a.examId) === activeSection)
     .sort((a, b) => (b.submittedAt ?? "").localeCompare(a.submittedAt ?? ""));
+
+  useEffect(() => {
+    if (auth.studentId && mine.length > 0) markSeen("test-results", auth.studentId, mine.map((a) => a.id));
+  }, [auth.studentId, mine.map((a) => a.id).join(",")]);
 
   if (student && !portalAccess(student).showTests) {
     return (
