@@ -60,6 +60,7 @@ export interface TestResult {
   testNumber: number;
   paperNumber: string;
   date: string; // ISO date
+  section?: Section; // result belongs to Quran or Main Academy; older records default to Quran
   resultFields?: ResultField[];
   nuraniQaida: TestResultEntry | null;
   nazra: TestResultEntry | null;
@@ -244,6 +245,7 @@ export interface WeekSummary {
   fined: boolean;
   fineAmount: number;
   recoveredBeforeWeekEnd: boolean;
+  completed: boolean;
 }
 
 export interface PerformanceFine {
@@ -283,5 +285,44 @@ export interface AudioSubmission {
   qiratHeard: boolean;
   tajweedHeard: boolean;
 }
+export type GiftTriggerType = "result_percent" | "weekly_performance";
 
+export interface GiftRule {
+  id: string;
+  section: Section | "both";
+  category: string;
+  title: string;
+  description: string;
+  triggerType: GiftTriggerType;
+  threshold: number;
+  active: boolean;
+  createdAt: string;
+}
+
+export interface Gift {
+  id: string;
+  studentId: string;
+  section: Section;
+  ruleId: string | null;
+  category: string;
+  title: string;
+  description: string;
+  reason: string;
+  awardKey: string;
+  awardedAt: string;
+}
+
+export type FeeStatus = "pending" | "paid" | "waived";
+
+export interface Fee {
+  id: string;
+  studentId: string;
+  section: Section;
+  title: string;
+  amount: number;
+  dueDate: string | null;
+  status: FeeStatus;
+  note: string;
+  createdAt: string;
+}
 
