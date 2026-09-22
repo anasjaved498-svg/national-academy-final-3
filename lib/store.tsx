@@ -1,7 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from "react";
-import { Announcement, PassingCriterion, Student, ResultField, Exam, ExamQuestion, ExamAttempt, ViolationType, QuranReview, DailyRatingEntry, DailyRating, PerformanceFine, TestFine, AudioSubmission, Section, Note, Subject, GiftRule, Gift, Fee, FeeStatus } from "./types";
+import { Announcement, PassingCriterion, Student, ResultField, Exam, ExamQuestion, ExamAttempt, ViolationType, QuranReview, DailyRatingEntry, DailyRating, PerformanceFine, TestFine, ManualFine, ManualFineStatus, AudioSubmission, Section, Note, Subject, GiftRule, Gift, Fee, FeeStatus } from "./types";
 import { seedAnnouncements, seedCriteria, seedStudents, seedQuranReviews } from "./seed";
 import { computeConsecutiveFails, computeResult } from "./calculations";
 import { buildMonthSummary, currentMonthKey } from "./performance";
@@ -20,6 +20,7 @@ import {
   ratingToRow,
   perfFineToRow,
   testFineToRow,
+  manualFineToRow,
   audioToRow,
   noteToRow,
   giftRuleToRow,
@@ -43,6 +44,7 @@ interface StoreState {
   dailyRatings: DailyRatingEntry[];
   performanceFines: PerformanceFine[];
   testFines: TestFine[];
+  manualFines: ManualFine[];
   audioSubmissions: AudioSubmission[];
   notes: Note[];
   giftRules: GiftRule[];
@@ -137,6 +139,10 @@ interface StoreState {
   // Test fail fines
   recordTestFine: (f: Omit<TestFine, "id" | "createdAt">) => void;
   waiveTestFine: (id: string) => void;
+  // Manual fines: these are independent from the automatic performance/test fine system.
+  addManualFine: (f: Omit<ManualFine, "id" | "createdAt" | "status"> & { status?: ManualFineStatus }) => void;
+  updateManualFineStatus: (id: string, status: ManualFineStatus) => void;
+  deleteManualFine: (id: string) => void;
   setStudentTestStatus: (studentId: string, consecutiveTestFails: number, testStatus: Student["status"]) => void;
   rejectStudentFromTests: (studentId: string) => void;
   reinstateStudentFromTests: (studentId: string) => void;
@@ -158,6 +164,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [dailyRatings, setDailyRatings] = useState<DailyRatingEntry[]>([]);
   const [performanceFines, setPerformanceFines] = useState<PerformanceFine[]>([]);
   const [testFines, setTestFines] = useState<TestFine[]>([]);
+  const [manualFines, setManualFines] = useState<ManualFine[]>([]);
   const [audioSubmissions, setAudioSubmissions] = useState<AudioSubmission[]>([]);
   const [notes, setNotes] = useState<Note[]>([]);
   const [giftRules, setGiftRules] = useState<GiftRule[]>([]);
@@ -189,6 +196,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         setDailyRatings(data.dailyRatings);
         setPerformanceFines(data.performanceFines);
         setTestFines(data.testFines);
+        setManualFines(data.manualFines);
         setAudioSubmissions(data.audioSubmissions);
         setNotes(data.notes);
         setGiftRules(data.giftRules);
@@ -215,6 +223,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   giftsRef.current = gifts;
   const feesRef = useRef(fees);
   feesRef.current = fees;
+  const manualFinesRef = useRef(manualFines);
+  manualFinesRef.current = manualFines;
   const dailyRatingsRef = useRef(dailyRatings);
   dailyRatingsRef.current = dailyRatings;
 
@@ -248,6 +258,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         setDailyRatings(data.dailyRatings);
         setPerformanceFines(data.performanceFines);
         setTestFines(data.testFines);
+        setManualFines(data.manualFines);
         setAudioSubmissions(data.audioSubmissions);
         setNotes(data.notes);
         setGiftRules(data.giftRules);
@@ -481,6 +492,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     setDailyRatings((prev) => prev.filter((x) => x.studentId !== studentId));
     setPerformanceFines((prev) => prev.filter((x) => x.studentId !== studentId));
     setTestFines((prev) => prev.filter((x) => x.studentId !== studentId));
+    setManualFines((prev) => prev.filter((x) => x.studentId !== studentId));
     setAttempts((prev) => prev.filter((x) => x.studentId !== studentId));
     setAudioSubmissions((prev) => prev.filter((x) => x.studentId !== studentId));
     setGifts((prev) => prev.filter((x) => x.studentId !== studentId));
@@ -868,6 +880,42 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     runWrite(syncUpsert("quran_test_fines", testFineToRow(updated)));
   };
 
+  // ---------- Manual fines ----------
+  // These records are intentionally separate from the automatic performance
+  // and online-test fine tables. Adding one here never changes a student's
+  // performance/test streaks, and receiving/waiving one never changes them.
+  const addManualFine: StoreState["addManualFine"] = (f) => {
+    const reason = f.reason.trim();
+    if (!reason || !Number.isFinite(f.amount) || f.amount <= 0) return;
+    const fine: ManualFine = {
+      ...f,
+      id: newUuid(),
+      amount: Number(f.amount),
+      reason,
+      fineDate: f.fineDate || new Date().toISOString().slice(0, 10),
+      status: f.status ?? "pending",
+      createdAt: new Date().toISOString(),
+    };
+    manualFinesRef.current = [fine, ...manualFinesRef.current];
+    setManualFines((prev) => [fine, ...prev]);
+    runWrite(syncUpsert("quran_manual_fines", manualFineToRow(fine)));
+  };
+
+  const updateManualFineStatus: StoreState["updateManualFineStatus"] = (id, status) => {
+    const fine = manualFinesRef.current.find((x) => x.id === id);
+    if (!fine) return;
+    const updated: ManualFine = { ...fine, status };
+    manualFinesRef.current = manualFinesRef.current.map((x) => (x.id === id ? updated : x));
+    setManualFines((prev) => prev.map((x) => (x.id === id ? updated : x)));
+    runWrite(syncUpsert("quran_manual_fines", manualFineToRow(updated)));
+  };
+
+  const deleteManualFine = (id: string) => {
+    manualFinesRef.current = manualFinesRef.current.filter((x) => x.id !== id);
+    setManualFines((prev) => prev.filter((x) => x.id !== id));
+    runWrite(syncDelete("quran_manual_fines", id));
+  };
+
   const setStudentTestStatus: StoreState["setStudentTestStatus"] = (
     studentId,
     consecutiveTestFails,
@@ -946,6 +994,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     dailyRatings,
     performanceFines,
     testFines,
+    manualFines,
     audioSubmissions,
     notes,
     giftRules,
@@ -994,6 +1043,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     waivePerformanceFine,
     recordTestFine,
     waiveTestFine,
+    addManualFine,
+    updateManualFineStatus,
+    deleteManualFine,
     setStudentTestStatus,
     rejectStudentFromTests,
     reinstateStudentFromTests,
