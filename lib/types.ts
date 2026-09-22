@@ -270,6 +270,19 @@ export interface TestFine {
   waived: boolean;
 }
 
+export type ManualFineStatus = "pending" | "received" | "waived";
+
+export interface ManualFine {
+  id: string;
+  studentId: string;
+  section: Section;
+  amount: number;
+  reason: string;
+  fineDate: string;
+  status: ManualFineStatus;
+  createdAt: string;
+}
+
 // ---------- Qirat / Tajweed recitation audio ----------
 // One row per (student, testNumber) — the student uploads both recordings,
 // the admin listens and enters marks on the same test result form.
