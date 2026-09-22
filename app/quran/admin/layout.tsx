@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import RequireRole from "@/components/RequireRole";
 import PortalShell from "@/components/PortalShell";
 import { useStore } from "@/lib/store";
-import { LayoutDashboard, Users, Megaphone, FileQuestion, Star, Activity, StickyNote } from "lucide-react";
+import { LayoutDashboard, Users, Megaphone, FileQuestion, Star, Activity, StickyNote, Gift, BadgeDollarSign } from "lucide-react";
 
 const nav = [
   { href: "/quran/admin", label: "Dashboard", icon: LayoutDashboard },
@@ -13,6 +13,8 @@ const nav = [
   { href: "/quran/admin/tests", label: "Online Tests", icon: FileQuestion },
   { href: "/quran/admin/announcements", label: "Announcements", icon: Megaphone },
   { href: "/quran/admin/notes", label: "Notes", icon: StickyNote },
+  { href: "/quran/admin/gifts", label: "Gifts", icon: Gift, badge: true },
+  { href: "/quran/admin/fees", label: "Fees", icon: BadgeDollarSign, badge: true },
   { href: "/quran/admin/reviews", label: "Testimonials", icon: Star },
 ];
 
