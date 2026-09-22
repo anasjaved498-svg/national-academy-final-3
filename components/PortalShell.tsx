@@ -111,7 +111,9 @@ export default function PortalShell({
                     >
                       <Icon size={17} /> {n.label}
                       {n.badge && (
-                        <span className={`w-2 h-2 rounded-full shrink-0 ${active ? "bg-white" : "bg-[var(--rose)]"}`} />
+                        <span className="ml-auto text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-full bg-[var(--rose)] text-white shrink-0">
+                          NEW
+                        </span>
                       )}
                     </Link>
                   );
@@ -178,7 +180,9 @@ export default function PortalShell({
                   >
                     <Icon size={16} /> {n.label}
                     {n.badge && (
-                      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${active ? "bg-white" : "bg-[var(--rose)]"}`} />
+                      <span className="ml-auto text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-full bg-[var(--rose)] text-white shrink-0">
+                        NEW
+                      </span>
                     )}
                   </Link>
                 );
