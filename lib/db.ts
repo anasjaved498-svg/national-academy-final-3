@@ -9,6 +9,7 @@ import {
   DailyRatingEntry,
   PerformanceFine,
   TestFine,
+  ManualFine,
   AudioSubmission,
   Note,
   GiftRule,
@@ -350,6 +351,31 @@ export function testFineToRow(f: TestFine) {
   };
 }
 
+// ----- quran_manual_fines -----
+export function manualFineFromRow(row: any): ManualFine {
+  return {
+    id: row.id,
+    studentId: row.student_id,
+    section: row.section ?? "quran",
+    amount: Number(row.amount),
+    reason: row.reason ?? "",
+    fineDate: row.fine_date ?? (row.created_at ?? "").slice(0, 10),
+    status: row.status ?? "pending",
+    createdAt: row.created_at,
+  };
+}
+export function manualFineToRow(f: ManualFine) {
+  return {
+    id: f.id,
+    student_id: f.studentId,
+    section: f.section,
+    amount: f.amount,
+    reason: f.reason,
+    fine_date: f.fineDate,
+    status: f.status,
+  };
+}
+
 // ----- quran_audio_submissions -----
 export function audioFromRow(row: any): AudioSubmission {
   return {
@@ -429,6 +455,7 @@ export async function deleteStudentCascade(studentId: string) {
   // ON DELETE CASCADE. Announcements/notes can target a student by audience.
   const byStudent = [
     "quran_test_fines",
+    "quran_manual_fines",
     "quran_performance_fines",
     "quran_audio_submissions",
     "quran_daily_ratings",
@@ -463,6 +490,7 @@ export async function fetchAllData() {
     ["quran_daily_ratings", (rows) => rows.map(ratingFromRow)],
     ["quran_performance_fines", (rows) => rows.map(perfFineFromRow)],
     ["quran_test_fines", (rows) => rows.map(testFineFromRow)],
+    ["quran_manual_fines", (rows) => rows.map(manualFineFromRow)],
     ["quran_audio_submissions", (rows) => rows.map(audioFromRow)],
     ["quran_notes", (rows) => rows.map(noteFromRow)],
     ["quran_gift_rules", (rows) => rows.map(giftRuleFromRow)],
@@ -491,10 +519,11 @@ export async function fetchAllData() {
     dailyRatings: results[6] as DailyRatingEntry[],
     performanceFines: results[7] as PerformanceFine[],
     testFines: results[8] as TestFine[],
-    audioSubmissions: results[9] as AudioSubmission[],
-    notes: results[10] as Note[],
-    giftRules: results[11] as GiftRule[],
-    gifts: results[12] as Gift[],
-    fees: results[13] as Fee[],
+    manualFines: results[9] as ManualFine[],
+    audioSubmissions: results[10] as AudioSubmission[],
+    notes: results[11] as Note[],
+    giftRules: results[12] as GiftRule[],
+    gifts: results[13] as Gift[],
+    fees: results[14] as Fee[],
   };
 }
