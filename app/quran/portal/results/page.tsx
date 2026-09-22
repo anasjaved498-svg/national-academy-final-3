@@ -1,6 +1,8 @@
 "use client";
 
+import { useEffect } from "react";
 import { useStore } from "@/lib/store";
+import { markSeen } from "@/lib/seenTracker";
 import WarningBanner from "@/components/WarningBanner";
 import { CheckCircle2, XCircle, Sparkles } from "lucide-react";
 import { portalAccess } from "@/lib/types";
@@ -21,6 +23,10 @@ export default function ResultsPage() {
   }
 
   const sorted = [...student.results].sort((a, b) => b.testNumber - a.testNumber);
+
+  useEffect(() => {
+    if (auth.studentId) markSeen("results", auth.studentId, sorted.map((r) => r.id));
+  }, [auth.studentId, sorted.map((r) => r.id).join(",")]);
 
   return (
     <div className="space-y-6">
@@ -45,7 +51,7 @@ export default function ResultsPage() {
             <div key={r.id} className="rounded-2xl border border-[var(--line)] bg-[var(--surface)] overflow-hidden">
               <div className="flex items-center justify-between px-6 py-4 bg-[var(--primary-tint)]">
                 <div>
-                  <p className="font-semibold text-[var(--heading)]">Test {r.testNumber}</p>
+                  <p className="font-semibold text-[var(--heading)]">{r.section === "academy" ? "Academy" : "Quran"} · Test {r.testNumber}</p>
                   <p className="text-xs text-[var(--ink-faint)]">
                     {r.date} · Paper #{r.paperNumber || "—"} · Passing mark: {r.requiredPercent}%
                   </p>
