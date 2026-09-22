@@ -18,7 +18,7 @@ export default function RequireRole({
   useEffect(() => {
     // Give the store a tick to hydrate from sessionStorage before deciding.
     const t = setTimeout(() => {
-      if (auth.role !== role) router.replace("/quran/login");
+      if (auth.role !== role) router.replace("/portal/login");
       setChecked(true);
     }, 50);
     return () => clearTimeout(t);
