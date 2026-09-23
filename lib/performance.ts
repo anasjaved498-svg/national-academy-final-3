@@ -20,66 +20,115 @@ function clamp(n: number, min = 0, max = 100) {
   return Math.max(min, Math.min(max, n));
 }
 
-/** Splits a month (YYYY-MM) into 4 fixed 7-day windows starting the 1st. */
+/**
+ * Performance weeks are Monday-Sunday.
+ *
+ * For a month whose first day is not Monday, the performance cycle starts on
+ * the first Monday in that month. This gives a clean weekly cycle for the
+ * admin portal. Example for September 2026:
+ *   Week 1 = Sep 7-13
+ *   Week 2 = Sep 14-20
+ *   Week 3 = Sep 21-27
+ *   Week 4 = Sep 28-Oct 4
+ */
 export function monthWeekRanges(monthKey: string): { start: string; end: string }[] {
-  const [y, m] = monthKey.split("-").map(Number);
-  const ranges: { start: string; end: string }[] = [];
-  for (let w = 0; w < 4; w++) {
-    const start = new Date(Date.UTC(y, m - 1, 1 + w * 7));
-    const end = new Date(Date.UTC(y, m - 1, 1 + w * 7 + 6));
-    ranges.push({ start: start.toISOString().slice(0, 10), end: end.toISOString().slice(0, 10) });
+  const [year, month] = monthKey.split("-").map(Number);
+  const firstDay = new Date(Date.UTC(year, month - 1, 1));
+
+  // 0 = Sunday, 1 = Monday, ... 6 = Saturday.
+  const daysUntilMonday = (8 - firstDay.getUTCDay()) % 7;
+  const firstMonday = new Date(firstDay);
+  firstMonday.setUTCDate(firstMonday.getUTCDate() + daysUntilMonday);
+
+  return Array.from({ length: 4 }, (_, index) => {
+    const start = new Date(firstMonday);
+    start.setUTCDate(firstMonday.getUTCDate() + index * 7);
+
+    const end = new Date(start);
+    end.setUTCDate(start.getUTCDate() + 6);
+
+    return {
+      start: start.toISOString().slice(0, 10),
+      end: end.toISOString().slice(0, 10),
+    };
+  });
+}
+
+function isoDates(startIso: string, endIso: string): string[] {
+  const dates: string[] = [];
+  const start = new Date(`${startIso}T00:00:00Z`);
+  const end = new Date(`${endIso}T00:00:00Z`);
+
+  for (const cursor = new Date(start); cursor <= end; cursor.setUTCDate(cursor.getUTCDate() + 1)) {
+    dates.push(cursor.toISOString().slice(0, 10));
   }
-  return ranges;
+  return dates;
 }
 
 /**
- * Builds the 4-week performance summary for a student's given month from their
- * raw daily ratings. Each week starts at a baseline score; each day's rating
- * nudges it up/down. A week that ENDS below the red line is fined, escalating
- * per how many times this has happened already this month. If the score climbs
- * back above the red line before the week ends, that week is not fined even if
- * it dipped below mid-week (recovery avoids the fine).
+ * Builds the 4-week performance summary.
+ *
+ * Rules:
+ * 1. Every new week starts at WEEK_START_SCORE (70), so Week 3 does not
+ *    continue from the ending score of Week 2.
+ * 2. A completed past week gets an `average` rating (-1) for any missing day.
+ *    This lets the graph finish the week instead of stopping on the last day
+ *    that happened to have a recorded rating.
+ * 3. The current week is never back-filled; only ratings actually entered are
+ *    shown and scored.
+ * 4. Only completed weeks can create an automatic performance fine.
  */
 export function buildMonthSummary(
   monthKey: string,
   entries: DailyRatingEntry[]
 ): { weeks: WeekSummary[]; totalFines: number } {
   const ranges = monthWeekRanges(monthKey);
-  const byDate = new Map(entries.map((e) => [e.date, e.rating]));
+  const byDate = new Map(entries.map((entry) => [entry.date, entry.rating]));
+  const today = new Date().toISOString().slice(0, 10);
   let offenseCount = 0;
 
-  const weeks: WeekSummary[] = ranges.map((range, idx) => {
+  const weeks = ranges.map((range, index) => {
     let score = WEEK_START_SCORE;
     let wentBelowRedLine = false;
     let recovered = false;
     const dailyScores: WeekSummary["dailyScores"] = [];
 
-    const start = new Date(range.start + "T00:00:00Z");
-    for (let d = 0; d < 7; d++) {
-      const date = new Date(start);
-      date.setUTCDate(date.getUTCDate() + d);
-      const iso = date.toISOString().slice(0, 10);
-      const rating = byDate.get(iso);
-      if (rating) {
-        score = clamp(score + RATING_DELTA[rating]);
-        if (score < PERFORMANCE_RED_LINE) wentBelowRedLine = true;
-        else if (wentBelowRedLine) recovered = true;
-        dailyScores.push({ date: iso, rating, score });
+    const completed = range.end < today;
+    const dates = isoDates(range.start, range.end);
+
+    for (const iso of dates) {
+      let rating = byDate.get(iso);
+
+      // Only completed weeks receive automatic average ratings for missing
+      // days. Future/current missing days remain genuinely unrecorded.
+      if (!rating && completed) {
+        rating = "average";
       }
+
+      if (!rating) continue;
+
+      score = clamp(score + RATING_DELTA[rating]);
+
+      if (score < PERFORMANCE_RED_LINE) {
+        wentBelowRedLine = true;
+      } else if (wentBelowRedLine) {
+        recovered = true;
+      }
+
+      dailyScores.push({ date: iso, rating, score });
     }
 
-    const today = new Date().toISOString().slice(0, 10);
-    const completed = range.end < today;
     const endedBelowRedLine = score < PERFORMANCE_RED_LINE;
-    const fined = completed && endedBelowRedLine; // only completed weeks can create a fine
+    const fined = completed && endedBelowRedLine;
     let fineAmount = 0;
+
     if (fined) {
       fineAmount = FINE_SCHEDULE[Math.min(offenseCount, FINE_SCHEDULE.length - 1)];
       offenseCount += 1;
     }
 
     return {
-      weekNumber: (idx + 1) as 1 | 2 | 3 | 4,
+      weekNumber: (index + 1) as 1 | 2 | 3 | 4,
       startDate: range.start,
       endDate: range.end,
       score,
@@ -91,7 +140,10 @@ export function buildMonthSummary(
     };
   });
 
-  return { weeks, totalFines: weeks.reduce((sum, w) => sum + w.fineAmount, 0) };
+  return {
+    weeks,
+    totalFines: weeks.reduce((sum, week) => sum + week.fineAmount, 0),
+  };
 }
 
 export function currentMonthKey(): string {
