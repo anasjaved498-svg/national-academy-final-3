@@ -18,8 +18,19 @@ import { Wallet, TrendingUp } from "lucide-react";
 
 const SECTION_LABEL: Record<Section, string> = { quran: "Quran", academy: "Academy" };
 
+function GiftTargetLabel({ viewBox, threshold }: { viewBox?: { x?: number; y?: number }; threshold: number }) {
+  const x = typeof viewBox?.x === "number" ? viewBox.x + 8 : 12;
+  const y = typeof viewBox?.y === "number" ? viewBox.y - 8 : 16;
+
+  return (
+    <text x={x} y={y} fill="var(--gold)" fontSize={11} fontWeight={600}>
+      🎁 Gift target {threshold}%
+    </text>
+  );
+}
+
 function SectionPerformance({ section }: { section: Section }) {
-  const { auth, dailyRatings, performanceFines } = useStore();
+  const { auth, dailyRatings, performanceFines, giftRules } = useStore();
   const monthKey = currentMonthKey();
   const myEntries = dailyRatings.filter(
     (e) => e.studentId === auth.studentId && e.section === section && e.date.startsWith(monthKey)
@@ -28,6 +39,28 @@ function SectionPerformance({ section }: { section: Section }) {
   const myFines = performanceFines.filter(
     (f) => f.studentId === auth.studentId && f.section === section && f.monthKey === monthKey && !f.waived
   );
+
+  // The graph's gift line is controlled by the existing Admin -> Gifts ->
+  // Gift Rules -> Weekly Performance threshold. A section-specific rule wins;
+  // otherwise a rule configured for both sections is used. If multiple rules
+  // match, the highest active threshold is the visual target.
+  const giftThreshold = useMemo(() => {
+    const matching = giftRules
+      .filter(
+        (rule) =>
+          rule.active &&
+          rule.triggerType === "weekly_performance" &&
+          (rule.section === section || rule.section === "both")
+      )
+      .sort((a, b) => {
+        const aSpecific = a.section === section ? 1 : 0;
+        const bSpecific = b.section === section ? 1 : 0;
+        if (aSpecific !== bSpecific) return bSpecific - aSpecific;
+        return b.threshold - a.threshold;
+      });
+
+    return matching[0]?.threshold ?? null;
+  }, [giftRules, section]);
 
   const chartData = summary.weeks
     .filter((w) => w.dailyScores.length > 0)
@@ -54,7 +87,7 @@ function SectionPerformance({ section }: { section: Section }) {
         ) : (
           <div className="h-72">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={chartData} margin={{ top: 10, right: 20, left: -10, bottom: 0 }}>
+              <LineChart data={chartData} margin={{ top: 18, right: 20, left: -10, bottom: 0 }}>
                 <CartesianGrid stroke="var(--line)" strokeDasharray="3 3" />
                 <XAxis dataKey="label" stroke="var(--ink-faint)" fontSize={11} />
                 <YAxis stroke="var(--ink-faint)" fontSize={12} domain={[0, 100]} />
@@ -72,6 +105,15 @@ function SectionPerformance({ section }: { section: Section }) {
                   strokeDasharray="4 4"
                   label={{ value: "Red line", position: "insideTopRight", fill: "var(--rose)", fontSize: 11 }}
                 />
+                {giftThreshold != null && (
+                  <ReferenceLine
+                    y={giftThreshold}
+                    stroke="var(--gold)"
+                    strokeDasharray="7 5"
+                    strokeWidth={1.8}
+                    label={<GiftTargetLabel threshold={giftThreshold} />}
+                  />
+                )}
                 <Line type="monotone" dataKey="score" stroke="var(--primary)" strokeWidth={2.5} dot={{ r: 3 }} />
               </LineChart>
             </ResponsiveContainer>
@@ -139,7 +181,7 @@ export default function PerformancePage() {
           Tracks how each day&apos;s rating (Not Good / Average / Excellent) shapes the week. Each
           week starts again from the weekly baseline, while the graph keeps the full month of weekly
           history. The red line marks the level that triggers a fine if a week ends below it.
-          {sections.length > 1 && " Quran and Academy are tracked completely independently."}
+          {giftThresholdHint(sections.length > 1)}
         </p>
       </div>
 
@@ -164,4 +206,8 @@ export default function PerformancePage() {
       <SectionPerformance key={activeSection} section={activeSection} />
     </div>
   );
+}
+
+function giftThresholdHint(hasBoth: boolean) {
+  return ` ${hasBoth ? "Quran and Academy are tracked completely independently. " : ""}The 🎁 gift target line is controlled by the active Weekly Performance Gift Rule threshold in Admin.`;
 }
